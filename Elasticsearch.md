@@ -1,3 +1,5 @@
+# Elasticsearch笔记
+
 [开源搜索：Elasticsearch、ELK Stack 和 Kibana 的开发者 | Elastic](https://www.elastic.co/cn/)
 
 # Elasticsearch简介
@@ -87,4 +89,182 @@ docker run --name kibana -e ELASTICSEARCH_HOSTS=http://192.168.56.10:9200 -p 560
 
 ![](https://secure-static.wolai.com/static/8eucSoW5RLJ5v9NaH8Em26/image.png)
 
-# Elasticsearch笔记
+# 初步检索
+
+1. _cat
+
+GET /_cat/nodes→查看所有节点
+
+GET /_cat/health→查看es健康状况
+
+GET /_cat/master→查看主节点
+
+GET /_cat/indices→查看所有索引
+
+1. 索引一个文档（保存）
+
+保存一个数据，保存在哪个索引的哪个类型下，指定用哪个唯一标识
+
+PUT customer/external/1→在customer索引下的external类型下保存1好数据为
+
+```JSON
+http://192.168.56.10:9200/customer/external/1
+{
+  "name":"zhangsan"
+} 
+```
+
+发送多次是更新操作
+
+```JSON
+{
+    "_index": "customer",
+    "_type": "external",
+    "_id": "1",
+    "_version": 1,
+    "result": "created",
+    "_shards": {
+        "total": 2,
+        "successful": 1,
+        "failed": 0
+    },
+    "_seq_no": 0,
+    "_primary_term": 1
+}
+```
+
+post→http://192.168.56.10:9200/customer/external/ 不指定id则一直created，并自动生成唯一id，如果指定了id则是更新
+
+1. 查询文档
+
+GET customer/external/1
+
+http://192.168.56.10:9200/customer/external/1
+
+```JSON
+{
+    "_index": "customer", // 在哪个索引
+    "_type": "external", // 在哪个类型
+    "_id": "1", // 记录id
+    "_version": 2, // 版本号
+    "_seq_no": 1, // 并发控制字段，每次更新就会+1，用来做乐观锁
+    "_primary_term": 1, // 同上，住分片重新分配，如重启，就会变化
+    "found": true, // 是否找到
+    "_source": { // 真正的内容
+        "name": "zhangsan"
+    }
+}
+```
+
+更新携带 →?if_seq_no=1&if_primary_term=1
+
+1. 更新文档
+
+```JSON
+POST customer/external/1/_update
+{
+  "doc":{
+    "name":"lisi"
+  }
+}
+// 会对比元数据是否有改变如果没有则不做任何操作
+```
+
+```JSON
+POST customer/external/1
+{
+   "name":"lisi"
+}
+// 不会对比元数据是否有改变直接更新
+```
+
+```JSON
+PUT customer/external/1
+{
+   "name":"lisi"
+}
+// 不会对比元数据是否有改变直接更新 
+```
+
+1. 删除文档&索引
+
+DELETE customer/external1
+
+DELETE customer
+
+不支持删除类型
+
+1. bulk批量API
+
+```JSON
+POST customer/external/_bulk
+{"index":{"_id":"1"}}
+{"name":"zhangsan"}
+{"index":{"_id":"2"}}
+{"name":"lisi"} 
+{"create":{"_id":"1"}}
+{"name":"lisi"}
+// 语法格式
+{"action":{metadata}} \n
+{request body}\n
+{"action":{metadata}} \n
+{request body}\n
+```
+
+```JSON
+{
+  "took" : 350,
+  "errors" : false,
+  "items" : [
+    {
+      "index" : {
+        "_index" : "customer",
+        "_type" : "external",
+        "_id" : "1",
+        "_version" : 1,
+        "result" : "created",
+        "_shards" : {
+          "total" : 2,
+          "successful" : 1,
+          "failed" : 0
+        },
+        "_seq_no" : 0,
+        "_primary_term" : 1,
+        "status" : 201
+      }
+    },
+    {
+      "index" : {
+        "_index" : "customer",
+        "_type" : "external",
+        "_id" : "2",
+        "_version" : 1,
+        "result" : "created",
+        "_shards" : {
+          "total" : 2,
+          "successful" : 1,
+          "failed" : 0
+        },
+        "_seq_no" : 1,
+        "_primary_term" : 1,
+        "status" : 201
+      }
+    }
+  ]
+}
+```
+
+注意：create 不会覆盖文档，index会覆盖文档进行更新
+
+1. 导入测试数据
+
+[accounts.zip - 蓝奏云](https://wws.lanzous.com/i0ptsjzxi2h)
+
+
+
+```JSON
+POST /bank/account/_bulk
+{
+  ....
+} 
+```
