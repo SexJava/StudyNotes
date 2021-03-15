@@ -50,7 +50,7 @@ Elastic的底层是开源库Lucene。但是，你没法直接用Lucene，必须�
    
    docker run --name elasticsearch -p 9200:9200 -p 9300:9300 \
    -e "discovery.type=single-node" \
-   -e ES_JAVA_OPTS="-Xms64m -Xmx128m" \
+   -e ES_JAVA_OPTS="-Xms64m -Xmx512m" \
    -v /mydata/elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml \
    -v /mydata/elasticsearch/data:/usr/share/elasticsearch/data \
    -v /mydata/elasticsearch/plugins:/usr/share/elasticsearch/plugins \
@@ -1086,5 +1086,724 @@ Elastic的底层是开源库Lucene。但是，你没法直接用Lucene，必须�
          }
          ```
 
-         
+   3. Mapping
 
+      映射定义文档如何被存储检索的
+
+      1. 字段类型
+
+         1. 核心类型
+
+            1. 字符串
+
+               - `text`⽤于全⽂索引，搜索时会自动使用分词器进⾏分词再匹配
+               - `keyword` 不分词，搜索时需要匹配完整的值
+
+            2. 数值型
+
+               - 整形： byte，short，integer，long
+               - 浮点型： float, half_float, scaled_float，double
+
+            3. 日期型：date
+
+            4. 范围型
+
+               - integer_range， long_range， float_range，double_range，date_range
+
+                 gt是大于，lt是小于，e是equals等于。
+
+                 age_limit的区间包含了此值的文档都算是匹配。
+
+            5. 布尔：boolean
+
+            6. ⼆进制：binary 会把值当做经过 base64 编码的字符串，默认不存储，且不可搜索
+
+         2. 复合类型
+
+            1. 对象：object一个对象中可以嵌套对象
+            2. 数组：array
+            3. 嵌套类型：nested 用于json对象数组
+
+         3. 地理类型
+
+            1. 地理坐标：geo_point用于描述经纬度坐标
+            2. 地理图形：geo_shape用于描述复杂形状，如多边形
+
+         4. 特定类型
+
+      2. 映射
+
+         Maping是用来定义一个文档（document），以及它所包含的属性（field）是如何存储和索引的。比如：使用maping来定义：
+
+         - 哪些字符串属性应该被看做全文本属性（full text fields）；
+
+         - 哪些属性包含数字，日期或地理位置；
+
+         - 文档中的所有属性是否都嫩被索引（all 配置）；
+
+         - 日期的格式；
+
+         - 自定义映射规则来执行动态添加属性；
+
+         - 查看mapping信息：GET bank/_mapping
+
+           ```json
+           {
+             "bank" : {
+               "mappings" : {
+                 "properties" : {
+                   "account_number" : {
+                     "type" : "long" # long类型
+                   },
+                   "address" : {
+                     "type" : "text", # 文本类型，会进行全文检索，进行分词
+                     "fields" : {
+                       "keyword" : { # addrss.keyword
+                         "type" : "keyword",
+                         "ignore_above" : 256
+                       }
+                     }
+                   },
+                   "age" : {
+                     "type" : "long"
+                   },
+                   "balance" : {
+                     "type" : "long"
+                   },
+                   "city" : {
+                     "type" : "text",
+                     "fields" : {
+                       "keyword" : {
+                         "type" : "keyword",
+                         "ignore_above" : 256
+                       }
+                     }
+                   },
+                   "email" : {
+                     "type" : "text",
+                     "fields" : {
+                       "keyword" : {
+                         "type" : "keyword",
+                         "ignore_above" : 256
+                       }
+                     }
+                   },
+                   "employer" : {
+                     "type" : "text",
+                     "fields" : {
+                       "keyword" : {
+                         "type" : "keyword",
+                         "ignore_above" : 256
+                       }
+                     }
+                   },
+                   "firstname" : {
+                     "type" : "text",
+                     "fields" : {
+                       "keyword" : {
+                         "type" : "keyword",
+                         "ignore_above" : 256
+                       }
+                     }
+                   },
+                   "gender" : {
+                     "type" : "text",
+                     "fields" : {
+                       "keyword" : {
+                         "type" : "keyword",
+                         "ignore_above" : 256
+                       }
+                     }
+                   },
+                   "lastname" : {
+                     "type" : "text",
+                     "fields" : {
+                       "keyword" : {
+                         "type" : "keyword",
+                         "ignore_above" : 256
+                       }
+                     }
+                   },
+                   "state" : {
+                     "type" : "text",
+                     "fields" : {
+                       "keyword" : {
+                         "type" : "keyword",
+                         "ignore_above" : 256
+                       }
+                     }
+                   }
+                 }
+               }
+             }
+           }
+           ```
+
+           **创建映射PUT /my_index**]
+
+           > 第一次存储数据的时候es就猜出了映射
+           >
+           > 第一次存储数据前可以指定映射
+
+           创建索引并指定映射
+
+           ```json
+           PUT /my_index
+           {
+             "mappings": {
+               "properties": {
+                 "age": {
+                   "type": "integer"
+                 },
+                 "email": {
+                   "type": "keyword" # 指定为keyword
+                 },
+                 "name": {
+                   "type": "text" # 全文检索。保存时候分词，检索时候进行分词匹配
+                 }
+               }
+             }
+           }
+           ```
+
+           输出：
+
+           ```json
+           {
+             "acknowledged" : true,
+             "shards_acknowledged" : true,
+             "index" : "my_index"
+           }
+           ```
+
+           **查看映射GET /my_index**
+
+           ```json
+           GET /my_index
+           ```
+
+           输出结果：
+
+           ```json
+           {
+             "my_index" : {
+               "aliases" : { },
+               "mappings" : {
+                 "properties" : {
+                   "age" : {
+                     "type" : "integer"
+                   },
+                   "email" : {
+                     "type" : "keyword"
+                   },
+                   "employee-id" : {
+                     "type" : "keyword",
+                     "index" : false
+                   },
+                   "name" : {
+                     "type" : "text"
+                   }
+                 }
+               },
+               "settings" : {
+                 "index" : {
+                   "creation_date" : "1588410780774",
+                   "number_of_shards" : "1",
+                   "number_of_replicas" : "1",
+                   "uuid" : "ua0lXhtkQCOmn7Kh3iUu0w",
+                   "version" : {
+                     "created" : "7060299"
+                   },
+                   "provided_name" : "my_index"
+                 }
+               }
+             }
+           }
+           ```
+
+           **添加新的字段映射/my_index/_mapping**
+
+           ```json
+           PUT /my_index/_mapping
+           {
+             "properties": {
+               "employee-id": {
+                 "type": "keyword",
+                 "index": false # 字段不能被检索。检索
+               }
+             }
+           }
+           ```
+
+           这里的 “index”: false，表明新增的字段不能被检索，只是一个冗余字段。
+
+           ###### 不能更新映射
+
+           对于已经存在的字段映射，我们不能更新。更新必须创建新的索引，进行数据迁移。
+
+           ###### 数据迁移
+
+           先创建new_twitter的正确映射。
+
+           然后使用如下方式进行数据迁移。
+
+           ```json
+           6.0以后写法
+           POST reindex
+           {
+             "source":{
+                 "index":"twitter"
+              },
+             "dest":{
+                 "index":"new_twitters"
+              }
+           }
+           
+           
+           老版本写法
+           POST reindex
+           {
+             "source":{
+                 "index":"twitter",
+                 "twitter":"twitter"
+              },
+             "dest":{
+                 "index":"new_twitters"
+              }
+           }
+           ```
+
+      3. 分词
+
+         一个tokenizer（分词器）接收一个字符流，将之分割为独立的tokens（词元，通常是独立的单词），然后输出tokens流。
+
+         例如：whitespace tokenizer遇到空白字符时分割文本。它会将文本"Quick brown fox!"分割为[Quick,brown,fox!]
+
+         该tokenizer（分词器）还负责记录各个terms(词条)的顺序或position位置（用于phrase短语和word proximity词近邻查询），以及term（词条）所代表的原始word（单词）的start（起始）和end（结束）的character offsets（字符串偏移量）（用于高亮显示搜索的内容）。
+
+         elasticsearch提供了很多内置的分词器（标准分词器），可以用来构建custom analyzers（自定义分词器）。
+
+         关于分词器： https://www.elastic.co/guide/en/elasticsearch/reference/7.6/analysis.html
+
+         ```json
+         POST _analyze
+         {
+           "analyzer": "standard",
+           "text": "The 2 Brown-Foxes bone."
+         }
+         ```
+
+         执行结果：
+
+         ```json
+         {
+           "tokens" : [
+             {
+               "token" : "the",
+               "start_offset" : 0,
+               "end_offset" : 3,
+               "type" : "<ALPHANUM>",
+               "position" : 0
+             },
+             {
+               "token" : "2",
+               "start_offset" : 4,
+               "end_offset" : 5,
+               "type" : "<NUM>",
+               "position" : 1
+             },
+             {
+               "token" : "brown",
+               "start_offset" : 6,
+               "end_offset" : 11,
+               "type" : "<ALPHANUM>",
+               "position" : 2
+             },
+             {
+               "token" : "foxes",
+               "start_offset" : 12,
+               "end_offset" : 17,
+               "type" : "<ALPHANUM>",
+               "position" : 3
+             },
+             {
+               "token" : "bone",
+               "start_offset" : 18,
+               "end_offset" : 22,
+               "type" : "<ALPHANUM>",
+               "position" : 4
+             }
+           ]
+         }
+         ```
+
+         对于中文，我们需要安装额外的分词器
+
+         1. 安装ik分词器
+
+            所有的语言分词，默认使用的都是“Standard Analyzer”，但是这些分词器针对于中文的分词，并不友好。为此需要安装中文的分词器。
+
+            注意：不能用默认elasticsearch-plugin install xxx.zip 进行自动安装
+            https://github.com/medcl/elasticsearch-analysis-ik/releases
+
+            在前面安装的elasticsearch时，我们已经将elasticsearch容器的“/usr/share/elasticsearch/plugins”目录，映射到宿主机的“ /mydata/elasticsearch/plugins”目录下，所以比较方便的做法就是下载“/elasticsearch-analysis-ik-7.4.2.zip”文件，然后解压到该文件夹下即可。安装完毕后，需要重启elasticsearch容器。
+
+            如果不嫌麻烦，还可以采用如下的方式：
+
+            1. **查看elasticsearch版本号：**
+
+               ```json
+               [vagrant@localhost ~]$ curl http://localhost:9200
+               {
+                 "name" : "66718a266132",
+                 "cluster_name" : "elasticsearch",
+                 "cluster_uuid" : "xhDnsLynQ3WyRdYmQk5xhQ",
+                 "version" : {
+                   "number" : "7.4.2",
+                   "build_flavor" : "default",
+                   "build_type" : "docker",
+                   "build_hash" : "2f90bbf7b93631e52bafb59b3b049cb44ec25e96",
+                   "build_date" : "2019-10-28T20:40:44.881551Z",
+                   "build_snapshot" : false,
+                   "lucene_version" : "8.2.0",
+                   "minimum_wire_compatibility_version" : "6.8.0",
+                   "minimum_index_compatibility_version" : "6.0.0-beta1"
+                 },
+                 "tagline" : "You Know, for Search"
+               }
+               ```
+
+            2. **进入es容器内部plugin目录**
+
+               - docker exec -it 容器id /bin/bash
+
+               ```json
+               [vagrant@localhost ~]$ sudo docker exec -it elasticsearch /bin/bash
+               
+               [root@66718a266132 elasticsearch]# pwd
+               /usr/share/elasticsearch
+               [root@66718a266132 elasticsearch]# pwd
+               /usr/share/elasticsearch
+               [root@66718a266132 elasticsearch]# yum install wget
+               #下载ik7.4.2
+               [root@66718a266132 elasticsearch]# wget https://github.com/medcl/elasticsearch-analysis-ik/releases/download/v7.4.2/elasticsearch-analysis-ik-7.4.2.zip
+               ```
+
+               - unzip 下载的文件
+
+               ```
+               yum install -y unzip zip
+               [root@66718a266132 elasticsearch]# unzip elasticsearch-analysis-ik-7.4.2.zip -d ik
+               
+               #移动到plugins目录下
+               [root@66718a266132 elasticsearch]#   
+               
+               chmod -R 777 plugins/ik
+               
+               docker restart elasticsearch
+               
+               ```
+
+               - rm -rf *.zip
+
+               ```json
+               [root@66718a266132 elasticsearch]# rm -rf elasticsearch-analysis-ik-7.6.2.zip 
+               ```
+
+               - 查看是否安装成功
+
+               ```
+               elasticsearch-plugin list
+               ```
+
+         2. 测试ik分词器
+
+            使用默认分词器
+
+            ```json
+            GET _analyze
+            {
+               "text":"我是中国人"
+            }
+            
+            ```
+
+            结果：
+
+            ```json
+            {
+              "tokens" : [
+                {
+                  "token" : "我",
+                  "start_offset" : 0,
+                  "end_offset" : 1,
+                  "type" : "<IDEOGRAPHIC>",
+                  "position" : 0
+                },
+                {
+                  "token" : "是",
+                  "start_offset" : 1,
+                  "end_offset" : 2,
+                  "type" : "<IDEOGRAPHIC>",
+                  "position" : 1
+                },
+                {
+                  "token" : "中",
+                  "start_offset" : 2,
+                  "end_offset" : 3,
+                  "type" : "<IDEOGRAPHIC>",
+                  "position" : 2
+                },
+                {
+                  "token" : "国",
+                  "start_offset" : 3,
+                  "end_offset" : 4,
+                  "type" : "<IDEOGRAPHIC>",
+                  "position" : 3
+                },
+                {
+                  "token" : "人",
+                  "start_offset" : 4,
+                  "end_offset" : 5,
+                  "type" : "<IDEOGRAPHIC>",
+                  "position" : 4
+                }
+              ]
+            }
+            
+            ```
+
+            ```json
+            GET _analyze
+            {
+               "analyzer": "ik_smart", 
+               "text":"我是中国人"
+            }
+            ```
+
+            结果：
+
+            ```json
+            {
+              "tokens" : [
+                {
+                  "token" : "我",
+                  "start_offset" : 0,
+                  "end_offset" : 1,
+                  "type" : "CN_CHAR",
+                  "position" : 0
+                },
+                {
+                  "token" : "是",
+                  "start_offset" : 1,
+                  "end_offset" : 2,
+                  "type" : "CN_CHAR",
+                  "position" : 1
+                },
+                {
+                  "token" : "中国人",
+                  "start_offset" : 2,
+                  "end_offset" : 5,
+                  "type" : "CN_WORD",
+                  "position" : 2
+                }
+              ]
+            }
+            ```
+
+            ```json
+            GET _analyze
+            {
+               "analyzer": "ik_max_word", 
+               "text":"我是中国人"
+            }
+            
+            ```
+
+            结果：
+
+            ```json
+            {
+              "tokens" : [
+                {
+                  "token" : "我",
+                  "start_offset" : 0,
+                  "end_offset" : 1,
+                  "type" : "CN_CHAR",
+                  "position" : 0
+                },
+                {
+                  "token" : "是",
+                  "start_offset" : 1,
+                  "end_offset" : 2,
+                  "type" : "CN_CHAR",
+                  "position" : 1
+                },
+                {
+                  "token" : "中国人",
+                  "start_offset" : 2,
+                  "end_offset" : 5,
+                  "type" : "CN_WORD",
+                  "position" : 2
+                },
+                {
+                  "token" : "中国",
+                  "start_offset" : 2,
+                  "end_offset" : 4,
+                  "type" : "CN_WORD",
+                  "position" : 3
+                },
+                {
+                  "token" : "国人",
+                  "start_offset" : 3,
+                  "end_offset" : 5,
+                  "type" : "CN_WORD",
+                  "position" : 4
+                }
+              ]
+            }
+            ```
+
+         3. 自定义词库
+
+            比如我们要把尚硅谷算作一个词
+
+            - 修改/usr/share/elasticsearch/plugins/ik/config中的IKAnalyzer.cfg.xml
+
+            ```xml
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+            <properties>
+            	<comment>IK Analyzer 扩展配置</comment>
+            	<!--用户可以在这里配置自己的扩展字典 -->
+            	<entry key="ext_dict"></entry>
+            	 <!--用户可以在这里配置自己的扩展停止词字典-->
+            	<entry key="ext_stopwords"></entry>
+            	<!--用户可以在这里配置远程扩展字典 -->
+            	<entry key="remote_ext_dict">http://192.168.56.10/es/fenci.txt</entry> 
+            	<!--用户可以在这里配置远程扩展停止词字典-->
+            	<!-- <entry key="remote_ext_stopwords">words_location</entry> -->
+            </properties>
+            ```
+
+            修改完成后，需要重启elasticsearch容器，否则修改不生效。docker restart elasticsearch
+
+            更新完成后，es只会对于新增的数据用更新分词。历史数据是不会重新分词的。如果想要历史数据重新分词，需要执行：
+
+            ```
+            POST my_index/_update_by_query?conflicts=proceed
+            ```
+
+            - 安装nginx
+
+              1. 随便启动一个nginx实例，只是为了复制出配置
+
+                 ```
+                 docker run -p80:80 --name nginx -d nginx:1.10   
+                 ```
+
+              2. 将容器内的配置文件拷贝到/mydata/nginx/conf/ 下
+
+                 ```
+                 [root@10 mydata]# docker container cp nginx:/etc/nginx .
+                 [root@10 mydata]# ls
+                 elasticsearch  mysql  nginx  redis
+                 [root@10 mydata]# cd nginx/
+                 [root@10 nginx]# ls
+                 conf.d  fastcgi_params  koi-utf  koi-win  mime.types  modules  nginx.conf  scgi_params  uwsgi_params  win-utf
+                 [root@10 nginx]# cd ../
+                 [root@10 mydata]# ls
+                 elasticsearch  mysql  nginx  redis
+                 [root@10 mydata]# mv nginx conf
+                 [root@10 mydata]# ls
+                 conf  elasticsearch  mysql  redis
+                 [root@10 mydata]# mkdir nginx
+                 [root@10 mydata]# mv conf nginx/
+                 [root@10 mydata]# ls
+                 elasticsearch  mysql  nginx  redis
+                 [root@10 mydata]# cd nginx/
+                 [root@10 nginx]# ls
+                 conf
+                 ```
+
+              3. 终止原容器：
+
+                 ```
+                 docker stop nginx
+                 ```
+
+              4. 执行命令删除原容器：
+
+                 ```
+                 docker rm nginx
+                 ```
+
+              5. 创建新的Nginx，执行以下命令
+
+                 ```
+                 mkdir -p /mydata/nginx/html
+                 mkdir -p /mydata/nginx/logs
+                 docker run -p 80:80 --name nginx \
+                  -v /mydata/nginx/html:/usr/share/nginx/html \
+                  -v /mydata/nginx/logs:/var/log/nginx \
+                  -v /mydata/nginx/conf/:/etc/nginx \
+                  -d nginx:1.10
+                 ```
+
+              6. 设置开机启动nginx
+
+                 ```
+                 docker update nginx --restart=always
+                 ```
+
+              7. 创建“/mydata/nginx/html/index.html”文件，测试是否能够正常访问
+
+                 ```
+                 echo '<h2>hello nginx!</h2>' >index.html
+                 ```
+
+              8. 访问：http://ngix所在主机的IP:80/index.html
+
+            - 安装好nginx后
+
+              ```
+              mkdir /mydata/nginx/html/es
+              cd /mydata/nginx/html/es
+              vim fenci.txt
+              输入乔碧萝
+              ```
+
+              测试效果：
+
+              ```
+              GET _analyze
+              {
+                 "analyzer": "ik_max_word", 
+                 "text":"乔碧萝殿下"
+              }
+              ```
+
+              结果：
+
+              ```
+              {
+                "tokens" : [
+                  {
+                    "token" : "乔碧萝",
+                    "start_offset" : 0,
+                    "end_offset" : 3,
+                    "type" : "CN_WORD",
+                    "position" : 0
+                  },
+                  {
+                    "token" : "殿下",
+                    "start_offset" : 3,
+                    "end_offset" : 5,
+                    "type" : "CN_WORD",
+                    "position" : 1
+                  }
+                ]
+              }
+              ```
+
+              
