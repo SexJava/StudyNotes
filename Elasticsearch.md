@@ -1806,4 +1806,253 @@ Elastic的底层是开源库Lucene。但是，你没法直接用Lucene，必须�
               }
               ```
 
-              
+
+
+
+
+
+# Elastsearch-Rest-Client
+
+java操作es有两种方式
+
+1. 9300:TCP
+
+   - spring-data-elasticsearch:transport-api.jar;
+     - springboot版本不同，ransport-api.jar不同，不能适配es版本
+     - 7.x已经不建议使用，8以后就要废弃
+
+2. 9200:HTTP
+
+   有诸多包
+
+   - jestClient: 非官方，更新慢；
+   - RestTemplate：模拟HTTP请求，ES很多操作需要自己封装，麻烦；
+   - HttpClient：同上；
+   - `Elasticsearch-Rest-Client`：官方RestClient，封装了ES操作，API层次分明，上手简单；
+
+   最终选择Elasticsearch-Rest-Client（elasticsearch-rest-high-level-client）
+
+   https://www.elastic.co/guide/en/elasticsearch/client/java-rest/current/java-rest-high.html
+
+# SpringBoot整合ElasticSearch
+
+创建项目mall-search
+
+选择依赖web，但不要在里面选择es
+
+1. 导入依赖
+
+   这里的版本要和所按照的ELK版本匹配。
+
+   ```xml
+   <dependency>
+       <groupId>org.elasticsearch.client</groupId>
+       <artifactId>elasticsearch-rest-high-level-client</artifactId>
+       <version>7.4.2</version>
+   </dependency>
+   
+   ```
+
+   在spring-boot-dependencies中所依赖的ES版本位6.8.5，要改掉
+
+   ```xml
+   <properties>
+       <java.version>1.8</java.version>
+       <elasticsearch.version>7.4.2</elasticsearch.version>
+   </properties>
+   ```
+
+   请求测试项，比如es添加了安全访问规则，访问es需要添加一个安全头，就可以通过requestOptions设置
+
+   官方建议把requestOptions创建成单实例
+
+   ```java
+   @Configuration
+   public class GuliESConfig {
+   
+       public static final RequestOptions COMMON_OPTIONS;
+   
+       static {
+           RequestOptions.Builder builder = RequestOptions.DEFAULT.toBuilder();
+   
+           COMMON_OPTIONS = builder.build();
+       }
+   
+   ```
+
+2. 编写测试类
+
+   1. 测试保存数据
+
+      https://www.elastic.co/guide/en/elasticsearch/client/java-rest/current/java-rest-high-document-index.html
+
+      保存方式分为同步和异步，异步方式多了个listener回调
+
+      ```java
+      @Test
+      public void indexData() throws IOException {
+          
+          // 设置索引
+          IndexRequest indexRequest = new IndexRequest ("users");
+          indexRequest.id("1");
+      
+          User user = new User();
+          user.setUserName("张三");
+          user.setAge(20);
+          user.setGender("男");
+          String jsonString = JSON.toJSONString(user);
+          
+          //设置要保存的内容，指定数据和类型
+          indexRequest.source(jsonString, XContentType.JSON);
+          
+          //执行创建索引和保存数据
+          IndexResponse index = client.index(indexRequest, GulimallElasticSearchConfig.COMMON_OPTIONS);
+      
+          System.out.println(index);
+      
+      }
+      ```
+
+   2. 测试获取数据
+
+      https://www.elastic.co/guide/en/elasticsearch/client/java-rest/current/java-rest-high-search.html
+
+      ```java
+      @Test
+          public void find() throws IOException {
+              // 1 创建检索请求
+              SearchRequest searchRequest = new SearchRequest();
+              searchRequest.indices("bank");
+              SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+              // 构造检索条件
+      //        sourceBuilder.query();
+      //        sourceBuilder.from();
+      //        sourceBuilder.size();
+      //        sourceBuilder.aggregation();
+              sourceBuilder.query(QueryBuilders.matchQuery("address","mill"));
+              System.out.println(sourceBuilder.toString());
+      
+              searchRequest.source(sourceBuilder);
+      
+              // 2 执行检索
+              SearchResponse response = client.search(searchRequest, GuliESConfig.COMMON_OPTIONS);
+              // 3 分析响应结果
+              System.out.println(response.toString());
+          }
+      
+      ```
+
+      ```
+      {"took":198,"timed_out":false,"_shards":{"total":1,"successful":1,"skipped":0,"failed":0},
+       "hits":{
+           "total":{"value":4,"relation":"eq"},
+           "max_score":5.4032025,"hits":[{"_index":"bank","_type":"account","_id":"970","_score":5.4032025,"_source":{"account_number":970,"balance":19648,"firstname":"Forbes","lastname":"Wallace","age":28,"gender":"M","address":"990 Mill Road","employer":"Pheast","email":"forbeswallace@pheast.com","city":"Lopezo","state":"AK"}},{"_index":"bank","_type":"account","_id":"136","_score":5.4032025,"_source":{"account_number":136,"balance":45801,"firstname":"Winnie","lastname":"Holland","age":38,"gender":"M","address":"198 Mill Lane","employer":"Neteria","email":"winnieholland@neteria.com","city":"Urie","state":"IL"}},{"_index":"bank","_type":"account","_id":"345","_score":5.4032025,"_source":{"account_number":345,"balance":9812,"firstname":"Parker","lastname":"Hines","age":38,"gender":"M","address":"715 Mill Avenue","employer":"Baluba","email":"parkerhines@baluba.com","city":"Blackgum","state":"KY"}},{"_index":"bank","_type":"account","_id":"472","_score":5.4032025,"_source":{"account_number":472,"balance":25571,"firstname":"Lee","lastname":"Long","age":32,"gender":"F","address":"288 Mill Street","employer":"Comverges","email":"leelong@comverges.com","city":"Movico","state":"MT"}}]}}
+      
+      
+      ```
+
+      ```java
+       @Test
+          public void find() throws IOException {
+              // 1 创建检索请求
+              SearchRequest searchRequest = new SearchRequest();
+              searchRequest.indices("bank");
+              SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+              // 构造检索条件
+      //        sourceBuilder.query();
+      //        sourceBuilder.from();
+      //        sourceBuilder.size();
+      //        sourceBuilder.aggregation();
+              sourceBuilder.query(QueryBuilders.matchQuery("address","mill"));
+              //AggregationBuilders工具类构建AggregationBuilder
+              // 构建第一个聚合条件:按照年龄的值分布
+              TermsAggregationBuilder agg1 = AggregationBuilders.terms("ageAgg").field("age").size(10);// 聚合名称
+      // 参数为AggregationBuilder
+              sourceBuilder.aggregation(agg1);
+              // 构建第二个聚合条件:平均薪资
+              AvgAggregationBuilder agg2 = AggregationBuilders.avg("balanceAvg").field("balance");
+              sourceBuilder.aggregation(agg2);
+      
+              System.out.println("检索条件"+sourceBuilder.toString());
+      
+              searchRequest.source(sourceBuilder);
+      
+              // 2 执行检索
+              SearchResponse response = client.search(searchRequest, GuliESConfig.COMMON_OPTIONS);
+              // 3 分析响应结果
+              System.out.println(response.toString());
+          }
+      
+      ```
+
+      把检索结果封装为java bean
+
+      ```java
+      // 3.1 获取java bean
+      SearchHits hits = response.getHits();
+      SearchHit[] hits1 = hits.getHits();
+      for (SearchHit hit : hits1) {
+          hit.getId();
+          hit.getIndex();
+          String sourceAsString = hit.getSourceAsString();
+          Account account = JSON.parseObject(sourceAsString, Account.class);
+          System.out.println(account);
+      
+      }
+      ```
+
+      ```
+      Account(accountNumber=970, balance=19648, firstname=Forbes, lastname=Wallace, age=28, gender=M, address=990 Mill Road, employer=Pheast, email=forbeswallace@pheast.com, city=Lopezo, state=AK)
+      Account(accountNumber=136, balance=45801, firstname=Winnie, lastname=Holland, age=38, gender=M, address=198 Mill Lane, employer=Neteria, email=winnieholland@neteria.com, city=Urie, state=IL)
+      Account(accountNumber=345, balance=9812, firstname=Parker, lastname=Hines, age=38, gender=M, address=715 Mill Avenue, employer=Baluba, email=parkerhines@baluba.com, city=Blackgum, state=KY)
+      Account(accountNumber=472, balance=25571, firstname=Lee, lastname=Long, age=32, gender=F, address=288 Mill Street, employer=Comverges, email=leelong@comverges.com, city=Movico, state=MT)
+      
+      ```
+
+      获取检索到的分析信息
+
+      ```java
+      // 获取分析
+      Aggregations aggregations = search.getAggregations();
+      Terms ageAggTearms = aggregations.get("ageAgg");
+      for (Terms.Bucket bucket : ageAggTearms.getBuckets()) {
+          String keyAsString = bucket.getKeyAsString();
+          System.out.println(keyAsString+":"+bucket.getDocCount());
+      }
+      Avg balanceAvgAvg = aggregations.get("balanceAvg");
+      System.out.println(balanceAvgAvg.getValue());
+      
+      ```
+
+      **搜索address中包含mill的所有人的年龄分布以及平均年龄，平均薪资**
+
+      ```
+      GET bank/_search
+      {
+        "query": {
+          "match": {
+            "address": "Mill"
+          }
+        },
+        "aggs": {
+          "ageAgg": {
+            "terms": {
+              "field": "age",
+              "size": 10
+            }
+          },
+          "ageAvg": {
+            "avg": {
+              "field": "age"
+            }
+          },
+          "balanceAvg": {
+            "avg": {
+              "field": "balance"
+            }
+          }
+        }
+      }
+      ```
+
+      
