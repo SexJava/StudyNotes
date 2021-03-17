@@ -1245,3 +1245,131 @@
 ## 4.基础篇总结
 
 ![image-20210304233729217](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210304233729217.png)
+
+## 5.高级篇
+
+### 5.1.Elasticsearch
+
+### 5.2.商品上架
+
+ES在内存中，所以由于mysql。es也支持集群，数据库分片存储
+
+- 索引方案
+
+  ```
+  {
+      skuId:1
+      spuId:11
+      skyTitile:华为xx
+      price:999
+      saleCount:99
+      attr:[
+          {尺寸:5},
+          {CPU:高通945},
+          {分辨率:全高清}
+  	]
+  }
+  缺点：如果每个sku都存储规格参数(如尺寸)，会有冗余存储，因为每个spu对应的sku的规格参数都一
+  ```
+
+  ```
+  sku索引
+  {
+      spuId:1
+      skuId:11
+  }
+  attr索引
+  {
+      skuId:11
+      attr:[
+          {尺寸:5},
+          {CPU:高通945},
+          {分辨率:全高清}
+  	]
+  }
+  先找到4000个符合要求的spu，再根据4000个spu查询对应的属性，封装了4000个id，long 8B*4000=32000B=32KB
+  1K个人检索，就是32MB
+  
+  
+  结论：如果将规格参数单独建立索引，会出现检索时出现大量数据传输的问题，会引起网络网络
+  
+  ```
+
+  选用第一个方案，空间换时间
+
+  **建立Product索引**
+
+  ```json
+  PUT product
+  {
+      "mappings":{
+          "properties": {
+              "skuId":{ "type": "long" },
+              "spuId":{ "type": "keyword" },  # 不可分词
+              "skuTitle": {
+                  "type": "text",
+                  "analyzer": "ik_smart"  # 中文分词器
+              },
+              "skuPrice": { "type": "keyword" },
+              "skuImg"  : { "type": "keyword" },
+              "saleCount":{ "type":"long" },
+              "hasStock": { "type": "boolean" },
+              "hotScore": { "type": "long"  },
+              "brandId":  { "type": "long" },
+              "catalogId": { "type": "long"  },
+              "brandName": {"type": "keyword"},
+              "brandImg":{
+                  "type": "keyword",
+                  "index": false,  # 不可被检索，不生成index
+                  "doc_values": false # 不可被聚合
+              },
+              "catalogName": {"type": "keyword" },
+              "attrs": {
+                  "type": "nested",
+                  "properties": {
+                      "attrId": {"type": "long"  },
+                      "attrName": {
+                          "type": "keyword",
+                          "index": false,
+                          "doc_values": false
+                      },
+                      "attrValue": {"type": "keyword" }
+                  }
+              }
+          }
+      }
+  }
+  ```
+
+  - “type”: “keyword” 保持数据精度问题，可以检索，但不分词
+  - “index”:false 代表不可被检索
+  - “doc_values”: false 不可被聚合，es就不会维护一些聚合的信息
+
+  冗余存储的字段：不用来检索，也不用来分析，节省空间。
+
+  库存是bool。
+
+  检索品牌id，但是不检索品牌名字、图片
+
+  用skuTitle检索
+
+- ### nested嵌入式对象
+
+  属性是"type": “nested”,因为是内部的属性进行检索
+
+  数组类型的对象会被扁平化处理（对象的每个属性会分别存储到一起）
+
+  ```json
+  user.name=["aaa","bbb"]
+  user.addr=["ccc","ddd"]
+  
+  这种存储方式，可能会发生如下错误：
+  错误检索到{aaa,ddd}，这个组合是不存在的
+  
+  ```
+
+  数组的扁平化处理会使检索能检索到本身不存在的，为了解决这个问题，就采用了嵌入式属性，数组里是对象时用嵌入式属性（不是对象无需用嵌入式属性）
+
+  nested阅读：https://blog.csdn.net/weixin_40341116/article/details/80778599
+
+  使用聚合：https://blog.csdn.net/kabike/article/details/101460578
