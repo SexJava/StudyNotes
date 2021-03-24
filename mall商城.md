@@ -1,5 +1,7 @@
 
 
+
+
 # 谷粒商城
 
 ## 1. 环境搭建
@@ -1373,3 +1375,219 @@ ES在内存中，所以由于mysql。es也支持集群，数据库分片存储
   nested阅读：https://blog.csdn.net/weixin_40341116/article/details/80778599
 
   使用聚合：https://blog.csdn.net/kabike/article/details/101460578
+
+### 5.3.Nginx配置反向代理
+
+> http://nginx.org/en/
+
+Hosts文件
+
+```
+192.168.56.10 mall.com
+```
+
+Nginx配置文件
+
+![image-20210324210936104](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210324210936104.png)
+
+默认配置
+
+```text
+
+user  nginx;
+worker_processes  1;
+
+error_log  /var/log/nginx/error.log warn;
+pid        /var/run/nginx.pid;
+
+
+events {
+    worker_connections  1024;
+}
+
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log  /var/log/nginx/access.log  main;
+
+    sendfile        on;
+    #tcp_nopush     on;
+
+    keepalive_timeout  65;
+
+    #gzip  on;
+
+    include /etc/nginx/conf.d/*.conf;
+}
+
+```
+
+Server块
+
+```
+server {
+    listen       80;
+    server_name  localhost;
+
+    #charset koi8-r;
+    #access_log  /var/log/nginx/log/host.access.log  main;
+
+    location / {
+        root   /usr/share/nginx/html;
+        index  index.html index.htm;
+    }
+
+    #error_page  404              /404.html;
+
+    # redirect server error pages to the static page /50x.html
+    #
+    error_page   500 502 503 504  /50x.html;
+    location = /50x.html {
+        root   /usr/share/nginx/html;
+    }
+
+    # proxy the PHP scripts to Apache listening on 127.0.0.1:80
+    #
+    #location ~ \.php$ {
+    #    proxy_pass   http://127.0.0.1;
+    #}
+
+    # pass the PHP scripts to FastCGI server listening on 127.0.0.1:9000
+    #
+    #location ~ \.php$ {
+    #    root           html;
+    #    fastcgi_pass   127.0.0.1:9000;
+    #    fastcgi_index  index.php;
+    #    fastcgi_param  SCRIPT_FILENAME  /scripts$fastcgi_script_name;
+    #    include        fastcgi_params;
+    #}
+
+    # deny access to .htaccess files, if Apache's document root
+    # concurs with nginx's one
+    #
+    #location ~ /\.ht {
+    #    deny  all;
+    #}
+}
+
+```
+
+- 不走网关
+
+  mall.conf
+
+  ```
+  server {
+      listen       80;
+      server_name  mall.com;
+  
+      #charset koi8-r;
+      #access_log  /var/log/nginx/log/host.access.log  main;
+  
+      location / {
+  		proxy_pass http://192.168.56.1:10000;
+      }
+  ……………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………………
+  ```
+
+  
+
+- 走网关
+
+  ![image-20210324213129664](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210324213129664.png)
+
+nginx.conf
+
+```
+………………………………………………
+
+
+http {
+    ……………………………………
+
+    #gzip  on;
+    
+    upstream mall{
+	server 192.168.56.1:88;
+    }
+    include /etc/nginx/conf.d/*.conf;
+}
+
+```
+
+mall.conf
+
+```
+server {
+    listen       80;
+    server_name  mall.com;
+
+    #charset koi8-r;
+    #access_log  /var/log/nginx/log/host.access.log  main;
+
+    location / {
+		proxy_pass http://mall;
+    }
+
+   ………………………………………………………………………………………………………………………………………………
+}
+
+```
+
+配置gateway
+
+> https://docs.spring.io/spring-cloud-gateway/docs/current/reference/html/
+
+```yml
+spring:
+  cloud:
+    gateway:
+      routes:
+      - id: host_route
+        uri: https://example.org
+        predicates:
+        - Host=**.somehost.org,**.anotherhost.org
+```
+
+配置到所有路由的最下面（粗粒度匹配的放在下面）
+
+```
+spring:
+  cloud:
+    gateway:
+      routes:
+      - id: mall_host_route
+        uri: lb://mall-product
+        predicates:
+        - Host=**.mall.com
+```
+
+**Nginx代理给网关的时候，会丢失请求的hots信息**
+
+mall.conf
+
+```
+server {
+    listen       80;
+    server_name  mall.com;
+
+    #charset koi8-r;
+    #access_log  /var/log/nginx/log/host.access.log  main;
+
+    location / {
+		proxy_set_header Host $host;
+		proxy_pass http://mall;
+
+    }
+
+   ………………………………………………………………………………………………………………………………………………
+}
+
+```
+
