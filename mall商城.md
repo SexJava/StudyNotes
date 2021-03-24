@@ -1591,3 +1591,65 @@ server {
 
 ```
 
+### 5.4.压力测试
+
+> 压力测试考察当前软硬件环境下系统所能承受的最大负荷并帮助找出系统瓶颈所在。压测都是为了系统在线上的处理能力和稳定性维持在一个标准范围内，做到心中有数
+>
+> 使用压力测试，我们有希望找到很多种用其他测试方法更难发现的错误。有两种错误类型是：内存泄漏，并发与同步。
+>
+> 有效的压力测试系统将应用一下这些关键条件：重复，并发，量级，随机变化。
+
+**性能指标**
+
+- 响应时间(Response Time: RT)
+
+> 响应时间指用户从客户端发起一个请求开始,到客户端接收到从服务器端返回的响应结束,整个过程所耗费的时间。
+
+- HPS (Hits Per Second) :每秒点击次数,单位是次秒。
+- TPS (Transaction per Second);,系統每秒处理交易数,单位是笔秒。
+- OPS (Query per Second) :系统每秒处理查询次数,单位是次秒。
+
+> 对于互联网业务中,如果某些业务有且仅有一个请求连接,那么TPS-QPS-HPS,一般情况下用TPS来衡量整个业务流程,用QPS来衡量接口查询次数,用HPS来表示对服务器单击请求。
+
+- 无论TPS. QPS. HPS,此指标是衡量系统处理能力非常重要的指标,越大越好,根据经验,一般情况下:
+
+> 金融行业: 1000TPS-50000TPs,不包括互联网化的活动
+> 保险行业: 100TPS-100000Tps. 包括互联网化的活动
+> 制造行业: 10TPS-5000TPS
+> 互联网电子商务: 1000OTPS-1000000TPS
+> 互联网中型网站: 1000TPS-50000TPS
+> 互联网小型网站: 500TPS~1000TPS
+
+- 最大响应时间(Max Resonse Time,指用户发出请求或者指令到系统做出反应(响应)的最大时间。
+- 最少响应时间(Mininum RespanseTime)指用户发出请求或者指令到系统做出反应(响应)的最少时间。
+- 90%响应时间(90% Response Time) 是指所有用户的响应时间进行排序,第90%的响应时间。
+- 从外部看,性能测试主要关注如下三个指标
+
+> 吞吐量;每秒钟系统能够处理的请求数、任务数.
+> 响应时间:服务处理一个请求或一个任务的耗时。
+> 错误率:一批请求中结果出错的请求所占比例。
+
+1. 修改中文
+
+   ![image-20210324230726265](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210324230726265.png)
+
+2. 添加线程组模拟用户
+
+   ![image-20210324230805182](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210324230805182.png)
+
+3. 模拟200个用户1s内启动，循环100次，即20000个请求
+
+   ![image-20210324230843372](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210324230843372.png)
+
+4. 添加http请求
+
+   ![image-20210324230908608](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210324230908608.png)
+
+5. 请求接口
+
+   ![image-20210324230948500](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210324230948500.png)
+
+6. 添加查看结果树，汇总报告
+
+   ![image-20210324231038054](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210324231038054.png)
+
