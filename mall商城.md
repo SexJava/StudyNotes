@@ -1653,3 +1653,27 @@ server {
 
    ![image-20210324231038054](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210324231038054.png)
 
+**jconsole与jvisualvm**
+
+> Jdk的两个小工具console visulvm (升级版的consoke),通过命令行启动,可监控本地和远程应用.远程应用需要配置
+>
+> https://zhuanlan.zhihu.com/p/75799243
+
+- jconsole
+
+  - 命令行 jconsole即可
+
+- jvisualvm
+
+  ![image-20210325204024334](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210325204024334.png)
+
+  运行：正在运行的
+
+  休眠：sleep
+
+  等待：wait
+
+  驻留：线程池里面的空闲线程
+
+  监视：阻塞的线程，正在等待锁
+
