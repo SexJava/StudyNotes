@@ -1677,3 +1677,17 @@ server {
 
   监视：阻塞的线程，正在等待锁
 
+### 5.5.Nginx动静分离
+
+- 将所有项目的静态资源都应该放在nginx里面
+
+- 规则：/static/**的所有请求都由nginx直接返回
+
+  mall.conf
+
+```
+location /static/ {
+    root   /usr/share/nginx/html;
+} 
+```
+
