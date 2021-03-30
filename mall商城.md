@@ -1691,3 +1691,80 @@ location /static/ {
 } 
 ```
 
+### 5.5.缓存与分布式锁
+
+1. 缓存
+
+   1. 缓存使用
+
+      为了系统性能的提升,我们一般都会将部分数据放入缓存中,加速访问。而db承担数据落盘工作。
+
+      **哪些数据适合放进缓存？**
+
+      - 即时性、数据一致性要求不高的
+
+      - 访问量大且更新频率不高的数据(读多,写少)
+        举例:电商类应用,商品分类,商品列表等适合缓存并加一个失效时间(根据数据更新频率来定),后台如果发布一个商品,买家需要5分钟才能看到新的商品一般还是可以接受的。
+
+        ![image-20210330212813222](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210330212813222.png)
+
+   2. 整合redis作为缓存
+
+      - pom
+
+        ```xml
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.lettuce</groupId>
+                    <artifactId>lettuce-core</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+        </dependency>
+        ```
+
+      - application.yml
+
+        ```yml
+        spring:
+          redis:
+            host: 192.168.56.10
+            port: 6379
+        ```
+
+      - 
+
+2. 缓存失效问题
+
+   1. 缓存穿透
+
+      指**查询一个一定不存在的数据**，由于缓存是不命中，将去查询数据库，但是数据库也没有此记录，我们没有将这次查询的null写入缓存，这将导致这个不存在的数据每次请求都要去存储层去查询，失去了缓存的意义
+
+      - 风险：利用不存在的数据进行攻击，数据库瞬时压力增大，最终导致崩溃
+      - 解决：null结果缓存，并加入短暂过期时间
+
+   2. 缓存雪崩
+
+      指在我们设置缓存时**key采用了相同的过期时间**，导致缓存在某一时刻同时失效，请求全部转发到数据库，数据库瞬时压力过大导致雪崩
+
+      - 解决：原有的失效时间基础上增加一个随机值，比如1-5分钟随机，这样每一个缓存的过期时间的重复率就会降低，就很难引发集体失效的事件
+
+   3. 缓存击穿
+
+      对于一些设置了过期时间的key，如果这些key可能会在某些时间点被超高并发地访问，是一种**非常热点的数据**
+
+      如果这个**key在大量请求同时进来前正好失效**，那么所有对这个key的数据查询到落到数据库，我们成为缓存击穿
+
+      - 解决：加锁，大量并发只让一个人去查，其他人等待，查到以后释放锁，其他人获得锁，先查缓存，就会有数据，不用去查数据库
+
+3. 缓存数据一致性
+
+4. 分布式锁
+
+5. Spring Cache
