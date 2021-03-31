@@ -1767,4 +1767,66 @@ location /static/ {
 
 4. 分布式锁
 
+   1. 分布式锁基本原理
+
+      ![image-20210331202321720](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210331202321720.png)
+
+      我们可以同时去一个地方“占坑”，如果站到，就执行逻辑。否则就必须等待，直到释放锁。“占坑”可以去redis，也可以去数据库，可以去任何大家都能访问的地方。
+
+      等待可以自旋的方式
+
+   2. 阶段一
+
+      ![image-20210331212351743](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210331212351743.png)
+
+      问题：setnx占好了位，业务代码异常或者程序在页面过程中宕机。没有执行删除锁逻辑，这就造成了**死锁**
+
+      解决：设置锁的自动过期，即使没有删除，也会自动删除
+
+      问题：删除锁直接删除么？由于业务时间很长，锁自己过期了，我们直接删除，有可能把别人正在持有的锁删除了
+
+      解决：占锁的时候，值指定为uuid，每个人匹配是自己的锁才删除
+
+      问题：如果正好判断是当前值，正要删除锁的时候，锁已经过期了，别人已经设置了新的值。那么我们删除的是别人的锁
+
+      解决：删除锁必须保证原子性。使用redis+Lua脚本完成
+
+      ```java
+          public Map<String, List<CateLog2Vo>> getCatalogJsonFromDbWithRedisLock() {
+              // 1.占分布式锁。去redis占坑
+              // 设置过期时间，必须和加锁是同步的，原子的
+              String token = UUID.randomUUID().toString();
+              Boolean lock = stringRedisTemplate.opsForValue().setIfAbsent("lock", token,300,TimeUnit.SECONDS);
+              Map<String, List<CateLog2Vo>> dataFromDb;
+              if (lock){
+                  // 加锁成功...执行业务
+                  try {
+                      dataFromDb = getDataFromDb();
+                  }finally {
+                      // 获取值对比+对比成功删除 原子操作
+                      String script = "if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end";
+                      // 删除锁
+                      Long lock1 = stringRedisTemplate.execute(new DefaultRedisScript<Long>(script, Long.class)
+                              , Arrays.asList("lock")
+                              , token);
+                  }
+      
+                  return dataFromDb;
+              }else {
+                  // 加锁失败...重试。synchronized()
+                  // 自旋
+                  // 休眠100ms
+                  try {
+                      Thread.sleep(100);
+                  } catch (InterruptedException e) {
+                      e.printStackTrace();
+                  }
+                  return getCatalogJsonFromDbWithRedisLock();
+      
+              }
+          }
+      ```
+
+      
+
 5. Spring Cache
