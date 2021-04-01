@@ -1,7 +1,3 @@
-
-
-
-
 # 谷粒商城
 
 ## 1. 环境搭建
@@ -1763,9 +1759,7 @@ location /static/ {
 
       - 解决：加锁，大量并发只让一个人去查，其他人等待，查到以后释放锁，其他人获得锁，先查缓存，就会有数据，不用去查数据库
 
-3. 缓存数据一致性
-
-4. 分布式锁
+3. 分布式锁
 
    1. 分布式锁基本原理
 
@@ -1775,7 +1769,7 @@ location /static/ {
 
       等待可以自旋的方式
 
-   2. 阶段一
+   2. 流程
 
       ![image-20210331212351743](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210331212351743.png)
 
@@ -1827,6 +1821,333 @@ location /static/ {
           }
       ```
 
-      
+   3. **Redisson**
+
+      > https://github.com/redisson/redisson/wiki/%E7%9B%AE%E5%BD%95
+
+      - 概述：
+
+        Redisson是一个在Redis的基础上实现的Java驻内存数据网格（In-Memory Data Grid）。它不仅提供了一系列的分布式的Java常用对象，还提供了许多分布式服务。其中包括(`BitSet`, `Set`, `Multimap`, `SortedSet`, `Map`, `List`, `Queue`, `BlockingQueue`, `Deque`, `BlockingDeque`, `Semaphore`, `Lock`, `AtomicLong`, `CountDownLatch`, `Publish / Subscribe`, `Bloom filter`, `Remote service`, `Spring cache`, `Executor service`, `Live Object service`, `Scheduler service`) Redisson提供了使用Redis的最简单和最便捷的方法。Redisson的宗旨是促进使用者对Redis的关注分离（Separation of Concern），从而让使用者能够将精力更集中地放在处理业务逻辑上。
+
+      - 整合redisson作为分布式锁等功能的框架
+
+        - pom.xml
+
+          ```xml
+          <!--redisson-->
+          <dependency>
+              <groupId>org.redisson</groupId>
+              <artifactId>redisson</artifactId>
+              <version>3.12.0</version>
+          </dependency>
+          ```
+
+        - 程序化配置
+
+          ```java
+          @Configuration
+          public class MyRedissonConfig {
+          
+              /**
+               * @Description: 所有对redisson的使用都是通过RedissonClient对象
+               * @Param: []
+               * @return: org.redisson.api.RedissonClient
+               * @Author: Liuyunda
+               * @Date: 2021/4/1
+               */
+              @Bean(destroyMethod="shutdown")
+              public RedissonClient redisson() throws IOException {
+                  // 创建配置
+                  Config config = new Config();
+                  // 安全链接用rediss://
+                  config.useSingleServer().setAddress("redis://192.168.56.10:6379");
+                  // 根据config创建出redissonClient实例
+                  RedissonClient redissonClient = Redisson.create(config);
+                  return redissonClient;
+          
+              }
+          }
+          ```
+
+        - **可重入锁（Reentrant Lock）**
+
+          > 基于Redis的Redisson分布式可重入锁[`RLock`](http://static.javadoc.io/org.redisson/redisson/3.10.0/org/redisson/api/RLock.html) Java对象实现了`java.util.concurrent.locks.Lock`接口。同时还提供了[异步（Async）](http://static.javadoc.io/org.redisson/redisson/3.10.0/org/redisson/api/RLockAsync.html)、[反射式（Reactive）](http://static.javadoc.io/org.redisson/redisson/3.10.0/org/redisson/api/RLockReactive.html)和[RxJava2标准](http://static.javadoc.io/org.redisson/redisson/3.10.0/org/redisson/api/RLockRx.html)的接口。
+
+          ```java
+              @ResponseBody
+              @GetMapping("/hello")
+              public String hello(){
+                  // 获取锁，只要锁的名字一样，就是同一把锁
+                  RLock lock = redisson.getLock("my-lock");
+                  // 加锁
+                  // 阻塞式等待（看门狗自动续期）
+                  // lock.lock();
+                  /**
+                   * 10秒自动解锁，自动解锁时间一定要大于业务的执行时间
+                   * 如果传递了锁的超时时间，就发送给redis执行脚本，进行占锁，默认超时时间就是我们指定的时间
+                   * 如果我们没指定锁的超时时间，就使用LockWatchdogTimeout（看门狗）的默认时间，
+                   *    只要占锁成功，就会启动一个定时任务（重新给锁设置过期时间，新的过期时间就是看门狗的默认时间）
+                   *    每隔（internalLockleaseTime(看门狗时间)/3）时间进行一次续期操作
+                   */
+                  // lock.lock(10, TimeUnit.SECONDS);
+                  // 最佳实战(省掉了整个续期操作，手动解锁)
+                  lock.lock(30, TimeUnit.SECONDS);
+                  try {
+                      System.out.println("加锁成功，执行业务。。。。"+Thread.currentThread().getId());
+                      Thread.sleep(30000);
+                  }catch (Exception e) {
+          
+          
+                  } finally {
+                      // 解锁
+                      System.out.println("释放锁。。。"+Thread.currentThread().getId());
+                      lock.unlock();
+                  }
+                  return "hello";
+              }
+          ```
+
+          ```java
+          // 加锁以后10秒钟自动解锁
+          // 无需调用unlock方法手动解锁
+          lock.lock(10, TimeUnit.SECONDS);
+          
+          // 尝试加锁，最多等待100秒，上锁以后10秒自动解锁
+          boolean res = lock.tryLock(100, 10, TimeUnit.SECONDS);
+          if (res) {
+             try {
+               ...
+             } finally {
+                 lock.unlock();
+             }
+          }
+          ```
+
+          > 大家都知道，如果负责储存这个分布式锁的Redisson节点宕机以后，而且这个锁正好处于锁住的状态时，这个锁会出现锁死的状态。为了避免这种情况的发生，Redisson内部提供了一个监控锁的看门狗，它的作用是在Redisson实例被关闭前，不断的延长锁的有效期。默认情况下，看门狗的检查锁的超时时间是30秒钟，也可以通过修改[Config.lockWatchdogTimeout](https://github.com/redisson/redisson/wiki/2.-配置方法#lockwatchdogtimeout监控锁的看门狗超时单位毫秒)来另行指定。
+          >
+          > 另外Redisson还通过加锁的方法提供了`leaseTime`的参数来指定加锁的时间。超过这个时间后锁便自动解开了。
+
+        - **公平锁（Fair Lock）**
+
+          > 基于Redis的Redisson分布式可重入公平锁也是实现了`java.util.concurrent.locks.Lock`接口的一种`RLock`对象。同时还提供了[异步（Async）](http://static.javadoc.io/org.redisson/redisson/3.10.0/org/redisson/api/RLockAsync.html)、[反射式（Reactive）](http://static.javadoc.io/org.redisson/redisson/3.10.0/org/redisson/api/RLockReactive.html)和[RxJava2标准](http://static.javadoc.io/org.redisson/redisson/3.10.0/org/redisson/api/RLockRx.html)的接口。它保证了当多个Redisson客户端线程同时请求加锁时，优先分配给先发出请求的线程。所有请求线程会在一个队列中排队，当某个线程出现宕机时，Redisson会等待5秒后继续下一个线程，也就是说如果前面有5个线程都处于等待状态，那么后面的线程会等待至少25秒。
+
+          ```java
+          RLock fairLock = redisson.getFairLock("anyLock");
+          // 最常见的使用方法
+          fairLock.lock();
+          ```
+
+          > Redisson同时还为分布式可重入公平锁提供了异步执行的相关方法：
+
+          ```java
+          RLock fairLock = redisson.getFairLock("anyLock");
+          fairLock.lockAsync();
+          fairLock.lockAsync(10, TimeUnit.SECONDS);
+          Future<Boolean> res = fairLock.tryLockAsync(100, 10, TimeUnit.SECONDS);
+          ```
+
+        - **读写锁（ReadWriteLock）**
+
+          > 基于Redis的Redisson分布式可重入读写锁[`RReadWriteLock`](http://static.javadoc.io/org.redisson/redisson/3.4.3/org/redisson/api/RReadWriteLock.html) Java对象实现了`java.util.concurrent.locks.ReadWriteLock`接口。其中读锁和写锁都继承了[RLock](https://github.com/redisson/redisson/wiki/8.-分布式锁和同步器#81-可重入锁reentrant-lock)接口。
+
+          分布式可重入读写锁允许同时有多个读锁和一个写锁处于加锁状态。
+
+          ```java
+          RReadWriteLock rwlock = redisson.getReadWriteLock("anyRWLock");
+          // 最常见的使用方法
+          rwlock.readLock().lock();
+          // 或
+          rwlock.writeLock().lock();
+          ```
+
+          **保证一定能读到最新数据，修改期间，写锁是一个排他锁（互斥、独享锁）。读锁是一个共享锁**
+          **写锁没释放就必须等待**
+
+          **读+读：相当于无锁，并发读，只会在redis中记录好，所有当前的读锁。他们都会同时加锁成功**
+
+          **写+读：读必须等待写锁释放**
+          **写+写：阻塞方式**
+          **读+写：有读锁写也需要等待**
+          **只要有写锁的存在，都必须等待**
+
+          ```java
+              @GetMapping("/write")
+              @ResponseBody
+              public String writeValue(){
+                  String s = "";
+                  RReadWriteLock readWriteLock = redisson.getReadWriteLock("rw-lock");
+                  // 1.改数据加写锁
+                  RLock writeLockLock = readWriteLock.writeLock();
+                  try {
+                      writeLockLock.lock();
+                      System.out.println("写锁加锁成功..."+Thread.currentThread().getId());
+                      s = UUID.randomUUID().toString();
+                      Thread.sleep(30000);
+                      redisTemplate.opsForValue().set("writeValue",s);
+                  } catch (InterruptedException e) {
+                      e.printStackTrace();
+                  } finally {
+                      writeLockLock.unlock();
+                      System.out.println("写锁释放成功..."+Thread.currentThread().getId());
+                  }
+                  return s;
+              }
+          
+              @GetMapping("/read")
+              @ResponseBody
+              public String readValue(){
+                  String s = "";
+                  RReadWriteLock readWriteLock = redisson.getReadWriteLock("rw-lock");
+                  // 1.读数据加读锁
+                  RLock readLock = readWriteLock.readLock();
+                  readLock.lock();
+                  System.out.println("读锁加锁成功..."+Thread.currentThread().getId());
+                  try {
+                      s = (String) redisTemplate.opsForValue().get("writeValue");
+                      Thread.sleep(30000);
+                  } catch (Exception e) {
+                      e.printStackTrace();
+                  } finally {
+                      readLock.unlock();
+                      System.out.println("读锁释放成功..."+Thread.currentThread().getId());
+                  }
+                  return s;
+              }
+          ```
+
+        - **信号量（Semaphore）**
+
+          > 基于Redis的Redisson的分布式信号量（[Semaphore](http://static.javadoc.io/org.redisson/redisson/3.10.0/org/redisson/api/RSemaphore.html)）Java对象`RSemaphore`采用了与`java.util.concurrent.Semaphore`相似的接口和用法。同时还提供了[异步（Async）](http://static.javadoc.io/org.redisson/redisson/3.10.0/org/redisson/api/RSemaphoreAsync.html)、[反射式（Reactive）](http://static.javadoc.io/org.redisson/redisson/3.10.0/org/redisson/api/RSemaphoreReactive.html)和[RxJava2标准](http://static.javadoc.io/org.redisson/redisson/3.10.0/org/redisson/api/RSemaphoreRx.html)的接口。
+
+          ```java
+          RSemaphore semaphore = redisson.getSemaphore("semaphore");
+          semaphore.acquire();
+          //或
+          semaphore.acquireAsync();
+          semaphore.acquire(23);
+          semaphore.tryAcquire();
+          //或
+          semaphore.tryAcquireAsync();
+          semaphore.tryAcquire(23, TimeUnit.SECONDS);
+          //或
+          semaphore.tryAcquireAsync(23, TimeUnit.SECONDS);
+          semaphore.release(10);
+          semaphore.release();
+          //或
+          semaphore.releaseAsync();
+          ```
+
+          车库停车
+
+          ```java
+              /**
+               * @Description: 车库停车
+               * 3个车位
+               * 信号量也可以用作分布式限流
+               * @Param: []
+               * @return: java.lang.String
+               * @Author: Liuyunda
+               * @Date: 2021/4/1
+               */
+              @GetMapping("/park")
+              @ResponseBody
+              public String park() throws InterruptedException {
+                  RSemaphore park = redisson.getSemaphore("park");
+                  // 获取一个信号，占一个车位
+                  // 阻塞式，如果获取不到则一直获取
+                  // park.acquire();
+                  // 尝试获取一个信号
+                  boolean tryAcquire = park.tryAcquire();
+                  if (tryAcquire){
+                      // 执行业务
+                  }else {
+                      return "信号量已满";
+                  }
+                  return "ok=>"+tryAcquire;
+              }
+              @GetMapping("/go")
+              @ResponseBody
+              public String go() throws InterruptedException {
+                  RSemaphore park = redisson.getSemaphore("park");
+                  // 释放一个信号,释放一个车位
+                  park.release();
+                  return "ok";
+              }
+          ```
+
+        - **闭锁（CountDownLatch）**
+
+          > 基于Redisson的Redisson分布式闭锁（[CountDownLatch](http://static.javadoc.io/org.redisson/redisson/3.10.0/org/redisson/api/RCountDownLatch.html)）Java对象`RCountDownLatch`采用了与`java.util.concurrent.CountDownLatch`相似的接口和用法。
+
+          ```java
+          RCountDownLatch latch = redisson.getCountDownLatch("anyCountDownLatch");
+          latch.trySetCount(1);
+          latch.await();
+          
+          // 在其他线程或其他JVM里
+          RCountDownLatch latch = redisson.getCountDownLatch("anyCountDownLatch");
+          latch.countDown();
+          ```
+
+          门卫锁门
+
+          ```java
+              /**
+               * @Description: 放假，锁门
+               * 所有班级走完才锁门
+               * @Param: []
+               * @return: java.lang.String
+               * @Author: Liuyunda
+               * @Date: 2021/4/1
+               */
+              @GetMapping("/lockDoor")
+              @ResponseBody
+              public String lockDoor() throws InterruptedException {
+          
+                  RCountDownLatch door = redisson.getCountDownLatch("door");
+                  // 等待五个班
+                  door.trySetCount(5);
+                  // 等待闭锁都完成
+                  door.await();
+                  return "放假了！";
+              }
+          
+              @GetMapping("/gogogo/{id}")
+              @ResponseBody
+              public String gogogo(@PathVariable("id")Long id){
+                  RCountDownLatch door = redisson.getCountDownLatch("door");
+                  // 计数减一
+                  door.countDown();
+                  return id+"班的人都走了....";
+              }
+          ```
+
+   4. 缓存数据一致性
+
+      > 锁的名字影响锁的粒度，越细越快
+      >
+      > 锁的粒度：具体缓存的是某个数据
+
+      解决方案：
+
+      1. 双写模式：同时修改缓存中的数据
+
+         - 存在的问题：暂时性脏数据
+
+           ![image-20210401232009836](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210401232009836.png)
+
+         - 解决方案：1.对写数据库和写缓存整个操作加锁。2.给写缓存是设置过期时间
+
+      2. 失效模式：删除缓存中的数据，等待下次主动查询进行更新
+
+         - 存在的问题：脏数据
+
+           ![image-20210401232911790](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210401232911790.png)
+
+         - 解决方案：1.如果经常需要更改的数据，不建议放缓存，直接读数据库
+
+      3. ![image-20210401233256991](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210401233256991.png) 
+
+      4. ![image-20210401234013390](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210401234013390.png)
 
 5. Spring Cache
