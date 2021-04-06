@@ -2150,4 +2150,184 @@ location /static/ {
 
       4. ![image-20210401234013390](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210401234013390.png)
 
-5. Spring Cache
+4. **Spring Cache**
+
+   > https://docs.spring.io/spring-framework/docs/current/reference/html/integration.html#cache
+
+   1. 简介
+
+      - Spring从3.1开始定义了org.springframework.cache.Cache和org.springframework.cache.CacheManager接口来同意不通的缓存技术，并支持使用JCache（JSR-107）注解简化我们开发。
+
+      - Cache接口为缓存的组件规范定义，包含缓存的各种操作集合。Cache接口下Spring提供了各种xxxCache的实现。如RedisCache，EhCacheCache，ConcurrentMapCache等
+
+      - 每次调用缓存需要缓存功能的方法时，Spring会检查检查指定参数的指定的目标方法是否已经被调用过；如果有就直接从缓存中获取方法调用后的结果，如果没有就调用方法并缓存结果后返回给用户。下次调用直接从缓存中获取。
+
+      - 使用Spring缓存抽象时我们需要关注一下两点：
+
+        1. 确定方法需要被缓存以及他们的缓存策略
+        2. 从缓存中读取之前缓存存储的数据
+
+        ![springboot+redis缓存](https://gitee.com/SexJava/FigureBed/raw/master/static/springboot+redis缓存.png)
+
+   2. 缓存注解
+
+      - `@Cacheable`：触发将数据保存到缓存的操作。
+
+        - 默认行为
+
+          - 如果缓存中有，方法不调用
+          - key默认自动生成；缓存的名字：：SimpleKey[]（自主生成的key值）
+          - 缓存的value的值。默认使用jdk序列化机制。将序列化后的数据存到redis
+          - 默认时间（TTL）-1
+
+        - 自定义操作
+
+          - 指定生成的缓存使用的key：key属性指定。接收一个SpEl表达式
+
+            - | Name          | Location           | Description                                                  | Example                                                      |
+              | :------------ | :----------------- | :----------------------------------------------------------- | :----------------------------------------------------------- |
+              | `methodName`  | Root object        | 被调用方法的名称                                             | `#root.methodName`                                           |
+              | `method`      | Root object        | 被调用的方法                                                 | `#root.method.name`                                          |
+              | `target`      | Root object        | 被调用的目标对象                                             | `#root.target`                                               |
+              | `targetClass` | Root object        | 被调用目标的类                                               | `#root.targetClass`                                          |
+              | `args`        | Root object        | 用于调用目标的参数（作为数组）                               | `#root.args[0]`                                              |
+              | `caches`      | Root object        | 运行当前方法的缓存的集合                                     | `#root.caches[0].name`                                       |
+              | Argument name | Evaluation context | 任何方法参数的名称。 如果名称不可用（可能是由于没有调试信息），则参数名称在参数索引的where位置（从开头）下也可用。.`#a<#arg>``#arg``0` | `#iban` or (you can also use or notation as an alias).`#a0``#p0``#p<#arg>` |
+              | `result`      | Evaluation context | 方法调用的结果（要缓存的值）。 仅在表达式，表达式（用于计算）或表达式（当是）中可用。 对于受支持的包装器（例如），是指实际对象，而不是包装器.`unless``cache put``key``cache evict``beforeInvocation``false``Optional``#result` | `#result`                                                    |
+
+          - 指定缓存的数据的存活时间（过期时间）：配置文件中修改TTL，`spring.cache.redis.time-to-live=3600000`
+
+          - 将数据保存为json格式
+
+            - 默认配置
+
+              ```java
+              /**
+               * Default {@link RedisCacheConfiguration} using the following:
+               * <dl>
+               * <dt>key expiration</dt>
+               * <dd>eternal</dd>
+               * <dt>cache null values</dt>
+               * <dd>yes</dd>
+               * <dt>prefix cache keys</dt>
+               * <dd>yes</dd>
+               * <dt>default prefix</dt>
+               * <dd>[the actual cache name]</dd>
+               * <dt>key serializer</dt>
+               * <dd>{@link org.springframework.data.redis.serializer.StringRedisSerializer}</dd>
+               * <dt>value serializer</dt>
+               * <dd>{@link org.springframework.data.redis.serializer.JdkSerializationRedisSerializer}</dd>
+               * <dt>conversion service</dt>
+               * <dd>{@link DefaultFormattingConversionService} with {@link #registerDefaultConverters(ConverterRegistry) default}
+               * cache key converters</dd>
+               * </dl>
+               *
+               * @return new {@link RedisCacheConfiguration}.
+               */
+              public static RedisCacheConfiguration defaultCacheConfig() {
+              	return defaultCacheConfig(null);
+              }
+              ```
+
+            - 自定义配置类
+
+              ```java
+              /**
+               * @Author Liuyunda
+               * @Date 2021/4/6 23:04
+               * @Email man021436@163.com
+               * @Description: DOTO
+               */
+              @EnableConfigurationProperties(CacheProperties.class)
+              @Configuration
+              @EnableCaching
+              public class MyCacheConfig {
+              
+                  // @Autowired
+                  // CacheProperties cacheProperties;
+                  @Bean
+                  RedisCacheConfiguration redisCacheConfiguration(CacheProperties cacheProperties){
+                      RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig();
+                      // config = config.entryTtl();
+                      config = config.serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()));
+                      config = config.serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(new GenericJackson2JsonRedisSerializer()));
+                      /**
+                       * 原来和配置文件绑定的配置类是这样的
+                       *   @ConfigurationProperties(prefix = "spring.cache")
+                       *   public class CacheProperties
+                       * 要让他生效
+                       *   @EnableConfigurationProperties(CacheProperties.class)
+                       */
+                      CacheProperties.Redis redisProperties = cacheProperties.getRedis();
+              
+                      if (redisProperties.getTimeToLive() != null) {
+                          config = config.entryTtl(redisProperties.getTimeToLive());
+                      }
+                      if (redisProperties.getKeyPrefix() != null) {
+                          config = config.prefixKeysWith(redisProperties.getKeyPrefix());
+                      }
+                      if (!redisProperties.isCacheNullValues()) {
+                          config = config.disableCachingNullValues();
+                      }
+                      if (!redisProperties.isUseKeyPrefix()) {
+                          config = config.disableKeyPrefix();
+                      }
+                      return config;
+                  }
+              }
+              ```
+
+              
+
+      - `@CacheEvict`：触发将数据从缓存删除的操作。
+
+      - `@CachePut`：不影响方法执行的更新缓存。
+
+      - `@Caching`：组合多种缓存操作。
+
+      - `@CacheConfig`：在类级别共享缓存的相同配置。
+
+   3. 整合spring cache
+
+      1. 导入依赖
+
+         ```xml
+         <dependency>
+             <groupId>org.springframework.boot</groupId>
+             <artifactId>spring-boot-starter-cache</artifactId>
+         </dependency>
+         ```
+
+      2. 配置
+
+         1. 自动配置：
+
+            - `CacheAutoConfiguration`会导入`RedisCacheConfiguration`
+            - `RedisCacheConfiguration`自动配置好缓存管理器`RedisCacheManager`
+
+         2. 手动配置：
+
+            ```properties
+            spring.cache.type=redis
+            spring.cache.redis.time-to-live=3600000
+            #如果指定了前缀就用我们指定的前缀，如果没有就用缓存的名字作为前缀
+            spring.cache.redis.key-prefix=CACHE_
+            spring.cache.redis.use-key-prefix=true
+            #是否缓存空值。防止缓存穿透
+            spring.cache.redis.cache-null-values=true
+            ```
+
+      3. 测试缓存
+
+         1. 开启缓存功能`@EnableCaching`
+         2. 只需要使用注解完成缓存操作
+
+      4. 原理
+
+         `CacheAutoConfiguration`->导入`RedisCacheConfiguration`->自动配置了缓存管理器->`RedisCacheManager`->初始化所有的缓存->每个缓存决定使用什么配置->如果`redisCacheConfiguration`有就用已有的，没有就用默认配置。->想改缓存的配置只需要在容器中发一个`RedisCacheConfiguration即可`->就会应用到当前`RedisCacheManager`管理的所有缓存分区中。
+
+         
+
+         
+
+         
