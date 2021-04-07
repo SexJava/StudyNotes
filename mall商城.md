@@ -2351,3 +2351,34 @@ location /static/ {
          
       
          
+      
+         
+
+### 5.6.检索服务
+
+1. 添加资源文件
+
+2. 修改nginx配置
+
+   ```bash
+   server {
+       listen       80;
+       server_name mall.com *.mall.com;
+   ```
+
+3. 修改网关配置
+
+   ```yml
+           - id: mall_host_route
+             uri: lb://mall-product
+             predicates:
+               - Host=mall.com
+   
+           - id: mall_search_route
+             uri: lb://mall-search
+             predicates:
+               - Host=search.mall.com
+   ```
+
+4. 
+
