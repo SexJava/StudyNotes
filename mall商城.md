@@ -2279,55 +2279,75 @@ location /static/ {
 
               
 
-      - `@CacheEvict`：触发将数据从缓存删除的操作。
+      - `@CacheEvict`：触发将数据从缓存删除的操作。失效模式
 
-      - `@CachePut`：不影响方法执行的更新缓存。
+        - 进行多种操作：`@Caching`
+     - 指定删除某个分区下的所有数据：`@CacheEvict(value = "category",allEntries = true)`
+        - 存储同一类型的数据，都可以指定成同一个分区。分区名默认就是缓存的前缀
+
+      - `@CachePut`：不影响方法执行的更新缓存。/双写模式
 
       - `@Caching`：组合多种缓存操作。
 
       - `@CacheConfig`：在类级别共享缓存的相同配置。
 
    3. 整合spring cache
-
+   
       1. 导入依赖
-
+   
          ```xml
          <dependency>
-             <groupId>org.springframework.boot</groupId>
+          <groupId>org.springframework.boot</groupId>
              <artifactId>spring-boot-starter-cache</artifactId>
-         </dependency>
+      </dependency>
          ```
 
       2. 配置
-
-         1. 自动配置：
-
-            - `CacheAutoConfiguration`会导入`RedisCacheConfiguration`
+   
+      1. 自动配置：
+   
+         - `CacheAutoConfiguration`会导入`RedisCacheConfiguration`
             - `RedisCacheConfiguration`自动配置好缓存管理器`RedisCacheManager`
-
+   
          2. 手动配置：
-
+   
             ```properties
             spring.cache.type=redis
             spring.cache.redis.time-to-live=3600000
             #如果指定了前缀就用我们指定的前缀，如果没有就用缓存的名字作为前缀
             spring.cache.redis.key-prefix=CACHE_
-            spring.cache.redis.use-key-prefix=true
+         spring.cache.redis.use-key-prefix=true
             #是否缓存空值。防止缓存穿透
-            spring.cache.redis.cache-null-values=true
+         spring.cache.redis.cache-null-values=true
             ```
-
-      3. 测试缓存
-
-         1. 开启缓存功能`@EnableCaching`
+   
+   3. 测试缓存
+   
+      1. 开启缓存功能`@EnableCaching`
          2. 只需要使用注解完成缓存操作
 
       4. 原理
 
          `CacheAutoConfiguration`->导入`RedisCacheConfiguration`->自动配置了缓存管理器->`RedisCacheManager`->初始化所有的缓存->每个缓存决定使用什么配置->如果`redisCacheConfiguration`有就用已有的，没有就用默认配置。->想改缓存的配置只需要在容器中发一个`RedisCacheConfiguration即可`->就会应用到当前`RedisCacheManager`管理的所有缓存分区中。
 
+      5. 不足
+   
+         1. 读模式
+         - 缓存穿透：查询一个null数据。解决：缓存空数据`spring.cache.redis.cache-null-values=true`
+            - 缓存击穿：大量并发进来同时查询一个正好过期的数据。解决：加锁
+              - spring cache 默认没加锁
+              - 加锁`@Cacheable(value = "category",key = "#root.method.name",sync = true)`
+            - 缓存雪崩：大量的key同时过期。解决：加过期时间`spring.cache.redis.time-to-live=3600000`
+         2. 写模式（缓存与数据库一致）
+            1. 读写加锁（读多写少）
+            2. 引入canal（感知到mysql的更新去更新数据库）
+            3. 读多写多（直接去数据库查）
+         3. 总结：
+            1. 常规数据（读多写少，即时性，一致性要求不高的数据）完全可以使用spring-cache
+            2. 特殊数据：特殊数据就要特殊设计
+      
          
-
+      
          
-
+      
          
