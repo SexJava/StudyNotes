@@ -2324,14 +2324,15 @@ location /static/ {
    3. 测试缓存
    
       1. 开启缓存功能`@EnableCaching`
-         2. 只需要使用注解完成缓存操作
-
-      4. 原理
-
-         `CacheAutoConfiguration`->导入`RedisCacheConfiguration`->自动配置了缓存管理器->`RedisCacheManager`->初始化所有的缓存->每个缓存决定使用什么配置->如果`redisCacheConfiguration`有就用已有的，没有就用默认配置。->想改缓存的配置只需要在容器中发一个`RedisCacheConfiguration即可`->就会应用到当前`RedisCacheManager`管理的所有缓存分区中。
-
-      5. 不足
-   
+         
+2. 只需要使用注解完成缓存操作
+         
+4. 原理
+      
+   `CacheAutoConfiguration`->导入`RedisCacheConfiguration`->自动配置了缓存管理器->`RedisCacheManager`->初始化所有的缓存->每个缓存决定使用什么配置->如果`redisCacheConfiguration`有就用已有的，没有就用默认配置。->想改缓存的配置只需要在容器中发一个`RedisCacheConfiguration即可`->就会应用到当前`RedisCacheManager`管理的所有缓存分区中。
+      
+   5. 不足
+      
          1. 读模式
          - 缓存穿透：查询一个null数据。解决：缓存空数据`spring.cache.redis.cache-null-values=true`
             - 缓存击穿：大量并发进来同时查询一个正好过期的数据。解决：加锁
@@ -2380,5 +2381,406 @@ location /static/ {
                - Host=search.mall.com
    ```
 
-4. 
+4. 检索DSL语句
+
+   模糊匹配，过滤（属性，分类，品牌，价格区间，库存），排序，分页，高亮，聚合分析
+
+   ```json
+   GET product/_search
+   {
+     "query": {
+       "bool": {
+         "must": [
+           {
+             "match": {
+               "skuTitle": "华为"
+             }
+           }
+         ],
+         "filter": [
+           {
+             "term": {
+               "catalogId": "225"
+             }
+           },
+           {
+             "terms": {
+               "brandId": [
+                 "4",
+                 "1"
+               ]
+             }
+           },
+           {
+             "nested": {
+               "path": "attrs",
+               "query": {
+                 "bool": {
+                   "must": [
+                     {
+                       "term": {
+                         "attrs.attrId": {
+                           "value": "11"
+                         }
+                       }
+                     },
+                     {
+                       "terms": {
+                         "attrs.attrValue": [
+                           "abc",
+                           "1"
+                         ]
+                       }
+                     }
+                   ]
+                 }
+               }
+             }
+           },
+           {
+             "term": {
+               "hasStock": {
+                 "value": "false"
+               }
+             }
+           },
+           {
+             "range": {
+               "skuPrice": {
+                 "gte": 0,
+                 "lte": 6000
+               }
+             }
+           }
+         ]
+       }
+     },
+     "sort": [
+       {
+         "skuPrice": {
+           "order": "desc"
+         }
+       }
+     ],
+     "from": 0,
+     "size": 5,
+     "highlight": {
+       "fields": {"skuTitle": {}}, 
+       "pre_tags": "<b style='color:red;'>",
+       "post_tags": "</b>"
+     }
+   }
+   ```
+
+5. 修改映射（迁移）
+
+   ```json
+   PUT mall_product
+   {
+     "mappings": {
+       "properties": {
+         "attrs": {
+           "type": "nested",
+           "properties": {
+             "attrId": {
+               "type": "long"
+             },
+             "attrName": {
+               "type": "keyword"
+             },
+             "attrValue": {
+               "type": "keyword"
+             }
+           }
+         },
+         "brandId": {
+           "type": "long"
+         },
+         "brandImg": {
+           "type": "keyword"
+         },
+         "brandName": {
+           "type": "keyword"
+         },
+         "catalogId": {
+           "type": "long"
+         },
+         "catalogName": {
+           "type": "keyword"
+         },
+         "hasStock": {
+           "type": "boolean"
+         },
+         "hotScore": {
+           "type": "long"
+         },
+         "saleCount": {
+           "type": "long"
+         },
+         "skuId": {
+           "type": "long"
+         },
+         "skuImg": {
+           "type": "keyword"
+         },
+         "skuPrice": {
+           "type": "keyword"
+         },
+         "skuTitle": {
+           "type": "text",
+           "analyzer": "ik_smart"
+         },
+         "spuId": {
+           "type": "keyword"
+         }
+       }
+     }
+   }
+   ```
+
+   ```json
+   POST _reindex
+   {
+     "source": {
+       "index": "product"
+     },
+     "dest": {
+       "index": "mall_product"
+     }
+   }
+   ```
+
+   修改索引常量
+
+   ```java
+   public class EsConstant {
+       // sku在es中的索引
+       public static final String PRODUCT_INDEX = "mall_product";
+   }
+   
+   ```
+
+   嵌入式属性，查询，聚合，分析都应该用嵌入式的
+
+   ```json
+   {
+   "aggs": {
+       "brand_agg": {
+         "terms": {
+           "field": "brandId",
+           "size": 100
+         },
+         "aggs": {
+           "brand_name_agg": {
+             "terms": {
+               "field": "brandName",
+               "size": 1
+             }
+           },
+           "brand_img_agg": {
+             "terms": {
+               "field": "brandImg",
+               "size": 1
+             }
+           }
+         }
+       },
+       "catalog_agg": {
+         "terms": {
+           "field": "catalogId",
+           "size": 10
+         },
+         "aggs": {
+           "catalog_name_agg": {
+             "terms": {
+               "field": "catalogName",
+               "size": 10
+             }
+           }
+         }
+       },
+       "attr_agg":{
+         "nested": {
+           "path": "attrs"
+         },
+         "aggs": {
+           "attr_id_agg": {
+             "terms": {
+               "field": "attrs.attrId",
+               "size": 10
+             },
+             "aggs": {
+               "attr_name_agg": {
+                 "terms": {
+                   "field": "attrs.attrName",
+                   "size": 10
+                 }
+               },
+               "attr_value_agg":{
+                 "terms": {
+                   "field": "attrs.attrValue",
+                   "size": 10
+                 }
+               }
+             }
+           }
+         }
+       }
+     }
+   }
+   ```
+
+   完整的DSL语句
+
+   ```josn
+   GET mall_product/_search
+   {
+     "query": {
+       "bool": {
+         "must": [
+           {
+             "match": {
+               "skuTitle": "华为"
+             }
+           }
+         ],
+         "filter": [
+           {
+             "term": {
+               "catalogId": "225"
+             }
+           },
+           {
+             "terms": {
+               "brandId": [
+                 "4",
+                 "1"
+               ]
+             }
+           },
+           {
+             "nested": {
+               "path": "attrs",
+               "query": {
+                 "bool": {
+                   "must": [
+                     {
+                       "term": {
+                         "attrs.attrId": {
+                           "value": "11"
+                         }
+                       }
+                     },
+                     {
+                       "terms": {
+                         "attrs.attrValue": [
+                           "abc",
+                           "1"
+                         ]
+                       }
+                     }
+                   ]
+                 }
+               }
+             }
+           },
+           {
+             "term": {
+               "hasStock": {
+                 "value": "false"
+               }
+             }
+           },
+           {
+             "range": {
+               "skuPrice": {
+                 "gte": 0,
+                 "lte": 6000
+               }
+             }
+           }
+         ]
+       }
+     },
+     "sort": [
+       {
+         "skuPrice": {
+           "order": "desc"
+         }
+       }
+     ],
+     "from": 0,
+     "size": 5,
+     "highlight": {
+       "fields": {"skuTitle": {}}, 
+       "pre_tags": "<b style='color:red;'>",
+       "post_tags": "</b>"
+     },
+     "aggs": {
+       "brand_agg": {
+         "terms": {
+           "field": "brandId",
+           "size": 100
+         },
+         "aggs": {
+           "brand_name_agg": {
+             "terms": {
+               "field": "brandName",
+               "size": 1
+             }
+           },
+           "brand_img_agg": {
+             "terms": {
+               "field": "brandImg",
+               "size": 1
+             }
+           }
+         }
+       },
+       "catalog_agg": {
+         "terms": {
+           "field": "catalogId",
+           "size": 10
+         },
+         "aggs": {
+           "catalog_name_agg": {
+             "terms": {
+               "field": "catalogName",
+               "size": 10
+             }
+           }
+         }
+       },
+       "attr_agg":{
+         "nested": {
+           "path": "attrs"
+         },
+         "aggs": {
+           "attr_id_agg": {
+             "terms": {
+               "field": "attrs.attrId",
+               "size": 10
+             },
+             "aggs": {
+               "attr_name_agg": {
+                 "terms": {
+                   "field": "attrs.attrName",
+                   "size": 10
+                 }
+               },
+               "attr_value_agg":{
+                 "terms": {
+                   "field": "attrs.attrValue",
+                   "size": 10
+                 }
+               }
+             }
+           }
+         }
+       }
+     }
+   }
+   ```
+
+   
 
