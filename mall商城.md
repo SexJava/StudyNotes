@@ -2324,13 +2324,13 @@ location /static/ {
    3. 测试缓存
    
       1. 开启缓存功能`@EnableCaching`
-         
+   
 2. 只需要使用注解完成缓存操作
-         
+   
 4. 原理
-      
+   
    `CacheAutoConfiguration`->导入`RedisCacheConfiguration`->自动配置了缓存管理器->`RedisCacheManager`->初始化所有的缓存->每个缓存决定使用什么配置->如果`redisCacheConfiguration`有就用已有的，没有就用默认配置。->想改缓存的配置只需要在容器中发一个`RedisCacheConfiguration即可`->就会应用到当前`RedisCacheManager`管理的所有缓存分区中。
-      
+   
    5. 不足
       
          1. 读模式
@@ -2346,13 +2346,13 @@ location /static/ {
          3. 总结：
             1. 常规数据（读多写少，即时性，一致性要求不高的数据）完全可以使用spring-cache
             2. 特殊数据：特殊数据就要特殊设计
-      
          
-      
          
-      
          
-      
+         
+         
+         
+         
          
 
 ### 5.6.检索服务
@@ -2782,5 +2782,111 @@ location /static/ {
    }
    ```
 
+   java 检索语句
+   
+   ```java
+   		SearchSourceBuilder ssb = new SearchSourceBuilder();
+           /**
+            * 模糊匹配，过滤（属性，分类，品牌，价格区间，库存）
+            */
+           // bool query
+           BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
+           // must 模糊匹配
+           if (StringUtils.isNotEmpty(searchParam.getKeyword())){
+               boolQuery.must(QueryBuilders.matchQuery("skuTitle",searchParam.getKeyword()));
+           }
+           // filter 三级分类id
+           if (searchParam.getCatalog3Id()!=null){
+               boolQuery.filter(QueryBuilders.termQuery("catalogId",searchParam.getCatalog3Id()));
+           }
+           // filter 品牌id
+           if (searchParam.getBrandId()!=null && searchParam.getBrandId().size()>0){
+               boolQuery.filter(QueryBuilders.termsQuery("brandId",searchParam.getBrandId()));
+           }
+           // filter 属性
+           if (searchParam.getAttrs()!=null && searchParam.getAttrs().size()>0){
+               for (String attrString : searchParam.getAttrs()) {
+                   BoolQueryBuilder nestedBoolQuery = QueryBuilders.boolQuery();
+                   String[] s = attrString.split("_");
+                   String attrId = s[0];
+                   String[] attrValues = s[1].split(":");
+                   nestedBoolQuery.must(QueryBuilders.termQuery("attrs.attrId",attrId));
+                   nestedBoolQuery.must(QueryBuilders.termsQuery("attrs.attrValue",attrValues));
+                   NestedQueryBuilder nestedQuery = QueryBuilders.nestedQuery("attrs",nestedBoolQuery, ScoreMode.None);
+                   boolQuery.filter(nestedQuery);
+               }
+           }
+   
+   
+           // filter 库存
+           boolQuery.filter(QueryBuilders.termQuery("hasStock",searchParam.getHasStock()==1));
+   
+           // filter 价格区间
+           if (StringUtils.isNotEmpty(searchParam.getSkuPrice())){
+               RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("skuPrice");
+               String[] s = searchParam.getSkuPrice().split("_");
+               if (s.length==2){
+                   rangeQuery.gte(s[0]).lte(s[1]);
+               }else if (s.length==1){
+                   if (searchParam.getSkuPrice().startsWith("_")){
+                       rangeQuery.lte(s[0]);
+                   }
+                   if (searchParam.getSkuPrice().endsWith("_")){
+                       rangeQuery.gte(s[0]);
+                   }
+               }
+               boolQuery.filter(rangeQuery);
+           }
+           ssb.query(boolQuery);
+           /**
+            * 排序，分页，高亮
+            */
+           // 排序
+           if (StringUtils.isNotEmpty(searchParam.getSort())){
+               String sort = searchParam.getSort();
+               String[] s = sort.split("_");
+               SortOrder sortOrder = s[1].equalsIgnoreCase("asc")?SortOrder.ASC:SortOrder.DESC;
+               ssb.sort(s[0], sortOrder);
+           }
+   
+           // 分页
+           ssb.from((searchParam.getPageNum()-1)*EsConstant.PRODUCT_PAGE_SIZE);
+           ssb.size(EsConstant.PRODUCT_PAGE_SIZE);
+   
+           // 高亮
+           if (StringUtils.isNotEmpty(searchParam.getKeyword())){
+               HighlightBuilder highlightBuilder = new HighlightBuilder();
+               highlightBuilder.field("skuTitle");
+               highlightBuilder.preTags("<b style='color:red;'>");
+               highlightBuilder.postTags("</b>");
+               ssb.highlighter(highlightBuilder);
+           }
+           /**
+            * 聚合分析
+            */
+           // 品牌聚合
+           TermsAggregationBuilder brand_agg = AggregationBuilders.terms("brand_agg");
+           brand_agg.field("brandId").size(50);
+           // 品牌聚合子聚合
+           brand_agg.subAggregation(AggregationBuilders.terms("brand_name_agg").field("brandName").size(1));
+           brand_agg.subAggregation(AggregationBuilders.terms("brand_img_agg").field("brandImg").size(1));
+           ssb.aggregation(brand_agg);
+   
+           // 分类聚合
+           TermsAggregationBuilder catalog_agg = AggregationBuilders.terms("catalog_agg").field("catalogId").size(20);
+           catalog_agg.subAggregation(AggregationBuilders.terms("catalog_name_agg").field("catalogName").size(1));
+           ssb.aggregation(catalog_agg);
+   
+           // 属性聚合
+           NestedAggregationBuilder attr_agg = AggregationBuilders.nested("attr_agg","attrs");
+           TermsAggregationBuilder attr_id_agg = AggregationBuilders.terms("attr_id_agg").field("attrs.attrId").size(1);
+           attr_id_agg.subAggregation(AggregationBuilders.terms("attr_name_agg").field("attrs.attrName").size(1));
+           attr_id_agg.subAggregation(AggregationBuilders.terms("attr_value_agg").field("attrs.attrValue").size(50));
+           attr_agg.subAggregation(attr_id_agg);
+           ssb.aggregation(attr_agg);
+   
+           System.out.println(ssb.toString());
+   ```
+   
    
 
