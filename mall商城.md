@@ -2888,5 +2888,6 @@ location /static/ {
            System.out.println(ssb.toString());
    ```
    
+   postman 测试
    
-
+   ![image-20210409211412943](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210409211412943.png)
