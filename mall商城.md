@@ -2891,3 +2891,86 @@ location /static/ {
    postman 测试
    
    ![image-20210409211412943](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210409211412943.png)
+   
+   返回结果封装
+   
+   ```java
+   private SearchResult buildSearchResult(SearchResponse response, SearchParam searchParam) {
+       SearchResult result = new SearchResult();
+       // 1.返回的所有查询到的商品
+       SearchHits hits = response.getHits();
+       ArrayList<SkuEsModel> esModels = new ArrayList<>();
+       if (hits.getHits() != null && hits.getHits().length > 0) {
+           for (SearchHit hit : hits.getHits()) {
+               String sourceAsString = hit.getSourceAsString();
+               SkuEsModel esModel = JSON.parseObject(sourceAsString, SkuEsModel.class);
+               if (StringUtils.isNotEmpty(searchParam.getKeyword())){
+                   HighlightField skuTitle = hit.getHighlightFields().get("skuTitle");
+                   String skuTitleHighlight = skuTitle.getFragments()[0].string();
+                   esModel.setSkuTitle(skuTitleHighlight);
+               }
+               esModels.add(esModel);
+           }
+       }
+       result.setProducts(esModels);
+   
+       // 2.当前商品涉及到到的所有属性信息
+       ArrayList<SearchResult.AttrVo> attrVos = new ArrayList<>();
+       ParsedNested attrAgg = response.getAggregations().get("attr_agg");
+       ParsedLongTerms attrIdAgg = attrAgg.getAggregations().get("attr_id_agg");
+       for (Terms.Bucket bucket : attrIdAgg.getBuckets()) {
+           SearchResult.AttrVo attrVo = new SearchResult.AttrVo();
+           // 属性id
+           long attrId = bucket.getKeyAsNumber().longValue();
+           attrVo.setAttrId(attrId);
+           // 属性名
+           String attrName = ((ParsedStringTerms) bucket.getAggregations().get("attr_name_agg")).getBuckets().get(0).getKeyAsString();
+           attrVo.setAttrName(attrName);
+           // 属性的所有值
+           List<String> attrValues = ((ParsedStringTerms) bucket.getAggregations().get("attr_value_agg")).getBuckets().stream().map(item -> {
+               String attrValue = item.getKeyAsString();
+               return attrValue;
+           }).collect(Collectors.toList());
+           attrVo.setAttrValue(attrValues);
+           attrVos.add(attrVo);
+       }
+       result.setAttrs(attrVos);
+       // 3.当前商品涉及到的品牌信息
+       ArrayList<SearchResult.BrandVo> brandVos = new ArrayList<>();
+       ParsedLongTerms brandAgg = response.getAggregations().get("brand_agg");
+       for (Terms.Bucket bucket : brandAgg.getBuckets()) {
+           SearchResult.BrandVo brandVo = new SearchResult.BrandVo();
+           // 品牌的id
+           brandVo.setBrandId(bucket.getKeyAsNumber().longValue());
+           // 品牌的名字
+           brandVo.setBrandName(((ParsedStringTerms)bucket.getAggregations().get("brand_name_agg")).getBuckets().get(0).getKeyAsString());
+           // 品牌的图片
+           brandVo.setBrandImg(((ParsedStringTerms)bucket.getAggregations().get("brand_img_agg")).getBuckets().get(0).getKeyAsString());
+           brandVos.add(brandVo);
+       }
+       result.setBrands(brandVos);
+       // 4.分类信息
+       ArrayList<SearchResult.CatalogVo> catalogVos = new ArrayList<>();
+       ParsedLongTerms catalogAgg = response.getAggregations().get("catalog_agg");
+       List<? extends Terms.Bucket> buckets = catalogAgg.getBuckets();
+       for (Terms.Bucket bucket : buckets) {
+           SearchResult.CatalogVo catalogVo = new SearchResult.CatalogVo();
+           String catalogId = bucket.getKeyAsString();
+           catalogVo.setCatalogId(Long.parseLong(catalogId));
+   
+           ParsedStringTerms catalogNameAgg = bucket.getAggregations().get("catalog_name_agg");
+           String catalogName = catalogNameAgg.getBuckets().get(0).getKeyAsString();
+           catalogVo.setCatalogName(catalogName);
+           catalogVos.add(catalogVo);
+       }
+       result.setCatalogs(catalogVos);
+   
+       // 5.分页信息
+       result.setPageNum(searchParam.getPageNum());
+       long total = hits.getTotalHits().value;
+       result.setTotal(total);
+       int totalPages = (int) (total % EsConstant.PRODUCT_PAGE_SIZE == 0 ? total / EsConstant.PRODUCT_PAGE_SIZE : total / EsConstant.PRODUCT_PAGE_SIZE + 1);
+       result.setTotalPages(totalPages);
+       return result;
+   }
+   ```
