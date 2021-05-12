@@ -2974,3 +2974,42 @@ location /static/ {
        return result;
    }
    ```
+
+### 5.7.异步线程池（略过）
+
+### 5.8 认证服务(mall-auth-server)
+
+1. 引入登录及注册页面（login.html 、reg.html）
+
+2. 将静态资源上传者nginx服务器，mydata/nginx/html/static/login  及 mydata/nginx/html/static/reg
+
+3. 修改springboot(2.2.6)版本与springcloud(Hoxton.SR9)版本与其他服务保持一致
+
+4. 引入common依赖
+
+   ```xml
+   <dependency>
+       <groupId>com.lyd.mall</groupId>
+       <artifactId>mall-common</artifactId>
+       <version>0.0.1-SNAPSHOT</version>
+       <exclusions>
+           <exclusion>
+               <groupId>com.baomidou</groupId>
+               <artifactId>mybatis-plus-boot-starter</artifactId>
+           </exclusion>
+       </exclusions>
+   </dependency>
+   ```
+
+5. 添加配置
+
+   ```properties
+   spring.application.name=mall-auth-server
+   spring.cloud.nacos.discovery.server-addr=127.0.0.1:8848
+   server.port=20000
+   ```
+
+   
+
+6. 主启动类添加注解启动服务注册与发现`@EnableDiscoveryClient`，远程调用服务`@EnableFeignClients`
+
