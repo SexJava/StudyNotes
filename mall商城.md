@@ -2316,9 +2316,9 @@ location /static/ {
             spring.cache.redis.time-to-live=3600000
             #如果指定了前缀就用我们指定的前缀，如果没有就用缓存的名字作为前缀
             spring.cache.redis.key-prefix=CACHE_
-         spring.cache.redis.use-key-prefix=true
+            spring.cache.redis.use-key-prefix=true
             #是否缓存空值。防止缓存穿透
-         spring.cache.redis.cache-null-values=true
+            spring.cache.redis.cache-null-values=true
             ```
    
    3. 测试缓存
@@ -3029,94 +3029,136 @@ location /static/ {
 
 ### 5.9 Session共享问题
 
-1. session原理
+session原理
 
-   ![image-20210520214627022](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210520214627022.png)
+![image-20210520214627022](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210520214627022.png)
 
-   1. 不同服务，session不能共享问题
-   2. 同一服务，session不同步问题
+1. 不同服务，session不能共享问题
+2. 同一服务，session不同步问题
 
-2. session共享问题解决
+session共享问题解决
 
-   1. session复制 
+1. session复制 
 
-      1. 优点：web-server原生支持，只需要修改配置文件
-      2. 缺点：session同步需要数据传输，占用大量网络带宽，降低了服务器群的业务才处理能力，任意一台web-server保存的数据都是所有web-server的session总和，收到内存限制无法水平扩展更多的web-server。大型分布式集群情况下，由于所有web-server都全量保存数据，所以此方案不可取。
+   1. 优点：web-server原生支持，只需要修改配置文件
+   2. 缺点：session同步需要数据传输，占用大量网络带宽，降低了服务器群的业务才处理能力，任意一台web-server保存的数据都是所有web-server的session总和，收到内存限制无法水平扩展更多的web-server。大型分布式集群情况下，由于所有web-server都全量保存数据，所以此方案不可取。
 
-   2. 客户端存储
+2. 客户端存储
 
-      1. 优点：服务器不需存储session，用户保存自己的session信息到cookie中，节省服务端资源
-      2. 缺点：每次http请求，携带用户在cookie中的完整信息，浪费网络带宽。session的数据放在cookie中，cookie有长度限制4k，不能保存大量信息。session数据放在cookie中，存在泄漏，篡改，窃取等安全隐患
+   1. 优点：服务器不需存储session，用户保存自己的session信息到cookie中，节省服务端资源
+   2. 缺点：每次http请求，携带用户在cookie中的完整信息，浪费网络带宽。session的数据放在cookie中，cookie有长度限制4k，不能保存大量信息。session数据放在cookie中，存在泄漏，篡改，窃取等安全隐患
 
-   3. hash一致性
+3. hash一致性
 
-      1. 优点：
-         1. 只需要改nginx配置，不需要修改应用代码
-         2. 负载均衡，只要hash属性的值分布是均匀的，多台web-server的负载是均衡的
-         3. 可以支持web-server水平扩展（session同步法是不行的，受内存限制）
-      2. 缺点
-         1. session还是存在web-server中的，所以web-server重启可能导致部分session丢失，影响业务，如部分用户需要重新登录
-         2. 如果web-server水平扩展，rehash后session重新分布，也会有一部分用户路由不到正确的session
-      3. ~但是以上缺点问题不是很大，因为session本身就是都有有效期的，所以这两种反向代理的方式可以使用
+   1. 优点：
+      1. 只需要改nginx配置，不需要修改应用代码
+      2. 负载均衡，只要hash属性的值分布是均匀的，多台web-server的负载是均衡的
+      3. 可以支持web-server水平扩展（session同步法是不行的，受内存限制）
+   2. 缺点
+      1. session还是存在web-server中的，所以web-server重启可能导致部分session丢失，影响业务，如部分用户需要重新登录
+      2. 如果web-server水平扩展，rehash后session重新分布，也会有一部分用户路由不到正确的session
+   3. ~但是以上缺点问题不是很大，因为session本身就是都有有效期的，所以这两种反向代理的方式可以使用
 
-   4. 统一存储
+4. 统一存储
 
-      1. 优点：
-         1. 没有安全隐患
-         2. 可以水平扩展，数据库/缓存水平切分即可
-         3. web-server重启或扩容都不会有session丢失
-      2. 缺点
-         1. 增加了一次网络调用，并且需要修改应用代码；如将所有的getSession方法替换为从Redis查数据的方式。redis获取数据比内存慢很多
-         2. 上面缺点可以用SpringSession完美解决
+   1. 优点：
+      1. 没有安全隐患
+      2. 可以水平扩展，数据库/缓存水平切分即可
+      3. web-server重启或扩容都不会有session丢失
+   2. 缺点
+      1. 增加了一次网络调用，并且需要修改应用代码；如将所有的getSession方法替换为从Redis查数据的方式。redis获取数据比内存慢很多
+      2. 上面缺点可以用SpringSession完美解决
 
-   5. 不同服务，子域session共享
+5. 不同服务，子域session共享
 
-      ![image-20210520223700948](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210520223700948.png)
+   ![image-20210520223700948](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210520223700948.png)
 
-      1. 引入springSession依赖
+   1. 引入springSession依赖
 
-         ```xml
-         <!--整合springsession完成session共享-->
-         <dependency>
-             <groupId>org.springframework.session</groupId>
-             <artifactId>spring-session-data-redis</artifactId>
-         </dependency>
-         ```
+      ```xml
+      <!--整合springsession完成session共享-->
+      <dependency>
+          <groupId>org.springframework.session</groupId>
+          <artifactId>spring-session-data-redis</artifactId>
+      </dependency>
+      ```
 
-         
+      
 
-      2. 启动类开启`@EnableRedisHttpSession`注解
+   2. 启动类开启`@EnableRedisHttpSession`注解
 
-      3. 配置session数据存储类型
+   3. 配置session数据存储类型
 
-         ```properties
-         # Session store type.
-         spring.session.store-type=redis
-         ```
+      ```properties
+      # Session store type.
+      spring.session.store-type=redis
+      ```
 
-         
+      
 
-      4. 修改redis序列化机制为json
+   4. 修改redis序列化机制为json
 
-         ```java
-         @Bean
-         public RedisSerializer<Object> springSessionDefaultRedisSerializer() {
-             return new GenericJackson2JsonRedisSerializer();
-         }
-         ```
+      ```java
+      @Bean
+      public RedisSerializer<Object> springSessionDefaultRedisSerializer() {
+          return new GenericJackson2JsonRedisSerializer();
+      }
+      ```
 
-         
+      
 
-      5. 修改cookie的作用域为父作用域解决子域session不同享问题
+   5. 修改cookie的作用域为父作用域解决子域session不同享问题
 
-         ```java
-         @Bean
-         public CookieSerializer cookieSerializer(){
-             DefaultCookieSerializer defaultCookieSerializer = new DefaultCookieSerializer();
-             defaultCookieSerializer.setDomainName("mall.com");
-             defaultCookieSerializer.setCookieName("MALLSESSION");
-             return defaultCookieSerializer;
-         }
-         ```
+      ```java
+      @Bean
+      public CookieSerializer cookieSerializer(){
+          DefaultCookieSerializer defaultCookieSerializer = new DefaultCookieSerializer();
+          defaultCookieSerializer.setDomainName("mall.com");
+          defaultCookieSerializer.setCookieName("MALLSESSION");
+          return defaultCookieSerializer;
+      }
+      ```
 
-         
+
+### 5.10. SpringSession核心原理
+
+1. `@EnableRedisHttpSession`导入RedisHttpSessionConfiguration配置
+
+   1. 给容器添加了一个组件
+
+      1. `RedisIndexedSessionRepository`：redis操作session。session的增删改查封装类
+
+   2. `springSessionRepositoryFilter`：session存储过滤器，每个请求过来都必须经过filter
+
+   3. ```java
+      	@Override
+      	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+      			throws ServletException, IOException {
+      		request.setAttribute(SESSION_REPOSITORY_ATTR, this.sessionRepository);
+      		// 包装原始请求对象
+      		SessionRepositoryRequestWrapper wrappedRequest = new SessionRepositoryRequestWrapper(request, response);
+              // 包装原始响应对象
+      		SessionRepositoryResponseWrapper wrappedResponse = new SessionRepositoryResponseWrapper(wrappedRequest,
+      				response);
+      
+      		try {
+                  // 包装后的对象应用到了我们后面的整个执行链
+      			filterChain.doFilter(wrappedRequest, wrappedResponse);
+      		}
+      		finally {
+      			wrappedRequest.commitSession();
+      		}
+      	}
+      ```
+
+   4. 原始的request和response被包装成`SessionRepositoryRequestWrapper`和`SessionRepositoryResponseWrapper`
+
+   5. 以后获取session。request.getSession();
+
+   6. SessionRepositoryRequestWrapper.getSession()===>SessionRepository中获取到的
+
+   7. 装饰者模式
+
+### 5.11. 购物车
+
+​	
