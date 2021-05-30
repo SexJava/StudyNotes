@@ -3161,4 +3161,91 @@ session共享问题解决
 
 ### 5.11. 购物车
 
-​	
+1. ​	RedirectAttributes
+   1. addFlashAttribute()；将数据放在session中可以在页面取出，但是只能取一次
+   2. addAttribute()；将数据放在请求参数中
+
+### 5.12. 消息中间件-RabbitMQ
+
+1. 应用场景
+   1. 异步处理
+   2. 应用解耦
+   3. 流量控制
+   
+2. 概念
+
+   1. 大多应用中，可通过消息服务中间件来提升系统异步通信，扩展解耦能力
+   2. 消息服务中两个重要概念：消息代理（message broker）和目的地（destination），当消息发送者发送消息以后将由消息代理接管，消息代理保证消息传递到指定目的地
+   3. 消息队列主要有两种形式的目的地
+      1. 队列（queue）：点对点消息通信（point to point）
+      2. 主题（topic）：发布（publish）/订阅（subscribe）消息通信
+   4. 点对点式：
+      - 消息发送者发送消息，消息代理将其放入一个队列中，信息接收者从队列中获取消息内容，消息读取后被移出队列
+      - 消息只有唯一的发送者和接受者，但并不是说只能有一个接受者
+   5. 发布订阅式：
+      1. 发送者（发布者）发送消息到主题，多个接受者（订阅者）监听（订阅）这个主题，那么就会在消息到达时同时受到消息
+   6. JMS（Java Message Service）Java消息服务
+      1. 基于JVM消息代理的规范。ActiveMQ、HornetMQ是JMS实现
+   7. AMQP（Advanced Message Queuing Protocol）
+      1. 高级消息队列协议，也是一个消息代理的规范，兼容JMS
+      2. RabbitMQ是AMQP的实现
+
+3. JMS 与 AMQP对比
+
+   |              | JMS（Java Message Service）                                  | AMQP（Advanced Message Queuing Protocol）                    |
+   | ------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+   | 定义         | Java api                                                     | 网络线级协议                                                 |
+   | 跨语言       | 否                                                           | 是                                                           |
+   | 跨平台       | 否                                                           | 是                                                           |
+   | Model        | 提供两种消息模型：<br />1 .Peer-2-Peer<br />2 .Pub/Sub       | 提供了五种消息模型：<br />1.direct exchange<br />2.fanout exchange<br />3.topic exchange<br />4.headers exchange<br />5.system exchange<br /><br />本质来讲，后四中和JMS的Pub/Sub模型没有太大差别，仅是在路由机制上做了更详细的划分 |
+   | 支持消息类型 | 多种消息类型<br />TextMessage<br />MapMessage<br />BytesMessage<br />StreamMessage<br />ObjectMessage<br />Message(只有消息头和属性) | byte[],当实际应用时，有复杂的消息，可以将消息序列化后发送    |
+   | 综合评价     | JMS定义了Java API层面的标准，在Java体系中，多个Client均可通过JMS进行交互，不需要应用修改代码，但是其对跨平台的支持较差 | AMQP定义了wire-level层的协议标准；天然具有跨平台，跨语言特性 |
+
+4. **Spring支持**
+
+   1. spring-jms提供了对jms的支持
+   2. spring-rabbit提供了对AMQP的支持
+   3. 需要ConnectionFactory的实现来链接消息代理
+   4. 提供JmsTemplate、RabbitTemplate来发送消息
+   5. @JmsListener（JMS）、@RabbitListener（AMQP）注解方法上监听消息代理发布的消息
+   6. @EnableJms、@EnableRabbit开启支持
+
+5. SpringBoot自动配置
+
+   1. JmsAutoConfiguration
+   2. RabbitAutoConfiguration
+
+6. 市面上的MQ产品
+
+   1. ActiveMQ、RabbitMQ、RocketMQ、Kafka
+
+7. **RabbitMQ概念**
+
+   1. RabbitMQ是一个有erlang开发的AMQP（Advanced Message Queuing Protocol）的开源实现
+
+   2. 核心概念
+
+      1. Message：消息，消息是不具名的，它由消息头和消息体组成。消息体是不透明的，而消息头则是由一系列的可选属性组成，这些属性包括    routing-key（路由键）、priority（相对于其他消息的优先权）、delivery-mode（指出该消息可能需要持久性存储）等
+      2. Publisher：消息的生产者，也是一个向交换器发布消息的客户端应用程序
+      3. Exchange：交换器，用来接收生产者发送的消息并将这些消息路由给服务器中的队列。Exchange有4种类型：direct（默认）、fanout、topic、headers，不同类型的Exchagne转发消息的策略有所区别
+      4. Queue：消息队列，用来保存消息知道发送给消费者，它是消息的容器，也是消息的重点。一个消息可投入一个或多个队列。消息一直在队列里面，等待消费者连接到这个队列将其取走。
+      5. Binding：绑定，用户消息队列和交换机之间的关联。一个绑定就是基于路由键将交换器和消息队列连接起来的路由规则，所以可以将交换器理解成一个由绑定构成的路由表。Exchange和Queue的绑定可以是多对多的关系
+      6. Connection：网络连接，比如一个TCP连接
+      7. Channel：信道，多路复用连接中的一条独立的双向数据流通道。信道是建立在真是的TCP连接内的虚拟连接，AMQP命令都是通过信道发出去的，不管是发布消息，订阅队列还是接收消息，这些动作都是通过信道完成。因为对于操作系统来说建立和销毁TCP都是非常昂贵的开销，所以引入了信道的概念，以复用一条TCP连接。
+      8. Consumer：消息的消费者，表示一个从消息队列中取得消息的客户端应用程序。
+      9. Virtual Host：虚拟主机，表示一批交换器，消息队列和相关对象。虚拟主机是共享相同的身份认证和加密环境的独立服务器域。每个virtual host本质上就是一个mini版的RabbitMQ服务器，拥有自己的队列、交换器、绑定和权限机制。virtual host是AMQP概念的基础，必须在连接时指定，RabbitMQ默认的virtual host 是/
+      10. Broker：表示消息队列服务器实体
+
+      ![image-20210530155340089](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210530155340089.png)
+
+8. Docker 安装RabbitMQ
+
+   1. ```shell
+      docker run -d --name rabbitmq -p 5671:5671 -p 5672:5672 -p 4369:4369 -p 25672:25672 -p 15671:15671 -p 15672:15672 rabbitmq:management
+      ```
+
+      - 4369、25672（Erlang发现&集群端口）
+      - 5671、5672（AMQP短裤）
+      - 15672（Web管理后台端口）
+      - 61613，61614（STOMP协议端口）
+      - 1883，8883（MQTT协议端口）
