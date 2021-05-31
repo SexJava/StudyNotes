@@ -3249,3 +3249,311 @@ session共享问题解决
       - 15672（Web管理后台端口）
       - 61613，61614（STOMP协议端口）
       - 1883，8883（MQTT协议端口）
+   
+9. RabbitMQ运行机制
+
+   1. AMQP中的消息路由
+
+      - AMQP中消息的路由过程和Java开发者熟悉的JMS存在一些差别，AMQP中增加了Exchange和Binding的角色。生产者吧消息发布到Exchange上，消息最终到达队列并被消费者接收，而Binding决定交换器的消息应该发送到那个队列。
+
+   2. Exchange类型
+
+      1. Exchange分发消息时根据类型的不同分发策略有区别，目前共四种类型：direct（直接）、fanout（扇出）、topic（主题）、headers（头）。headers匹配AMQP消息的header而不是路由键，headers交换器和direct交换器完全一致，但性能差很多，目前几乎用不到了，所以直接看另外三种类型。
+
+         1. direct（直接）：消息中的路由键如果和binding key一致，交换器就将消息发到对应的队列中。路由键与队列名完全匹配，如果一个队列绑定到交换机要求路由键为“dog”，则只转发routing key标记为“dog”的消息，不会转发“dog.puppy”，也不会转发“dog.guard”等等。他是完全匹配、单播的模式。
+
+         2. fanout（扇出）：每个发到fanout类型交换器的消息都会分到所有绑定的队列上去。fanout交换器不处理路由键，知识简单的将队列绑定到交换器上，每个发送到交换器的消息都会被转发到与该交换器绑定的所有队列上。很像子网广播，没太子网内的主机都获得了一份复制的消息。fanout类型转发消息是最快的。
+
+         3. topic（主题）：topic交换器通过模式匹配分配消息的路由键属性，将路由键和某个模式进行匹配，此时队列需要绑定到一个模式上。他将路由键和绑定键的字符串切分为单词，这些单词之间用点隔开。它同样也会识别两个通配符：#（匹配0个或多个单词）*（匹配一个单词）。
+
+            ![image-20210531204826663](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210531204826663.png)
+
+            ​	![image-20210531204850305](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210531204850305.png)
+
+            ![image-20210531204933490](C:\Users\刘云达\AppData\Roaming\Typora\typora-user-images\image-20210531204933490.png)
+
+            ​		![image-20210531205002547](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210531205002547.png)
+
+10. RabbitMQ整合
+
+    1. 引入spring-boot-starter-amqp
+
+       1. ```xml
+          <!--RabbitMQ-->
+          <dependency>
+              <groupId>org.springframework.boot</groupId>
+              <artifactId>spring-boot-starter-amqp</artifactId>
+          </dependency>
+          ```
+
+       2. 引入后，RabbitAutoConfiguration就会自动生效
+
+       3. 给容器中自动配置了RabbitTemplate、AmqpAdmin、CachingConnectionFactory、RabbitMessagingTemplate
+
+       4. @EnableRabbit
+
+    2. application.yml
+
+       1. ```properties
+          spring.rabbitmq.host=192.168.56.10
+          spring.rabbitmq.port=5672
+          spring.rabbitmq.virtual-host=/
+          ```
+
+          
+
+    3. 测试RabbitMQ
+
+       1. AmqpAdmin：管理组件
+
+          1. ```java
+             // 使用Amqp进行创建exchange
+             DirectExchange directExchange = new DirectExchange("hello-java-exchange",true,false);
+             amqpAdmin.declareExchange(directExchange);
+             log.info("exchange[{}]创建成功","hello-java-exchange");
+             // 使用Amqp进行创建Queue
+             Queue queue = new Queue("hello-java-queue",true,false,false);
+             amqpAdmin.declareQueue(queue);
+             log.info("queue[{}]创建成功","hello-java-queue");
+             // 使用Amqp进行创建Binding
+             Binding binding = new Binding("hello-java-queue", Binding.DestinationType.QUEUE,"hello-java-exchange","hello.java",null);
+             amqpAdmin.declareBinding(binding);
+             log.info("Binding[{}]创建成功","hello-java-Binding");
+             ```
+
+             
+
+       2. RabbitTemplate：消息发送处理组件
+
+          1. 发送消息
+
+             ```java
+                 @Autowired
+                 RabbitTemplate rabbitTemplate;
+             
+                 @GetMapping("/sendMq")
+                 public String sendMessage(@RequestParam(value = "num",defaultValue = "10")Integer num){
+                     String message = "hello world";
+                     // 如果发送的消息是个对象，会使用序列化机制，将对象写出去，对象必须实现Serializable
+                     for (int i = 0; i < num; i++) {
+                         if (i%2==0){
+                             OrderReturnReasonEntity reasonEntity = new OrderReturnReasonEntity();
+                             reasonEntity.setId(1L);
+                             reasonEntity.setCreateTime(new Date());
+                             reasonEntity.setName("qqqq-"+i);
+                             reasonEntity.setStatus(1);
+                             reasonEntity.setSort(1);
+                             rabbitTemplate.convertAndSend("hello-java-exchange","hello.java", reasonEntity);
+                         }else {
+                             rabbitTemplate.convertAndSend("hello-java-exchange","hello.java", message);
+                         }
+             
+                         // log.info("消息发送完成{}",reasonEntity.toString());
+                     }
+                     return "ok";
+                 }
+             ```
+
+          2. 接收消息，监听消息使用@RabbitListener、@RabbitHandler
+
+             ```java
+             @RabbitListener(queues = {"hello-java-queue"})
+             @Service("orderItemService")
+             public class OrderItemServiceImpl extends ServiceImpl<OrderItemDao, OrderItemEntity> implements OrderItemService {
+                 /**
+                  * @Description: 监听队列
+                  * 1.原生详细类型Message：消息头消息体
+                  * 2.T 发送的消息的类型
+                  * 3.Channel 当前传输数据的通道
+                  *
+                  * Queue:可以很多人都来监听。只要收到消息，队列删除消息。而且只能有一个收到此消息
+                  *      场景
+                  *          1.订单服务启动多个:同一个消息，只能有一个客户端收到
+                  *          2.只有一个消息完全处理完，方法运行结束，就可以接收到下一个消息
+                  *
+                  * RabbitListener注解：类+方法上（监听哪些队列）
+                  * RabbitHandler注解：方法上(重载区分不同的消息)
+                  *
+                  * @Param: []
+                  * @return: void
+                  * @Author: Liuyunda
+                  * @Date: 2021/5/31
+                  */
+                 // @RabbitListener(queues = {"hello-java-queue"})
+                 @RabbitHandler
+                 public void receiveMessage(Message message, OrderReturnReasonEntity context, Channel channel){
+                     // System.out.println("接收到消息，内容："+message+",类型："+message.getClass());
+                     System.out.println("接收到消息，内容："+context);
+                     // try { TimeUnit.SECONDS.sleep(3); }catch (InterruptedException e) { e.printStackTrace(); }
+                     // System.out.println("消息处理完成");
+                 }
+             
+                 @RabbitHandler
+                 public void receiveMessage2(String context){
+                     // System.out.println("接收到消息，内容："+message+",类型："+message.getClass());
+                     System.out.println("接收到消息，内容："+context);
+                     // try { TimeUnit.SECONDS.sleep(3); }catch (InterruptedException e) { e.printStackTrace(); }
+                     // System.out.println("消息处理完成");
+                 }
+             }
+             ```
+
+       3. RabbitMQ消息确认机制-可靠抵达
+
+          - 保证消息不丢失，可靠抵达，可以使用事务消息，性能下降250倍，为此引入确认机制
+
+          - **publisher** confirmCallback 确认模式
+
+          - **publisher** returnCallback 未投递到queue退回模式
+
+          - **consumer** ack机制
+
+            ![image-20210531222532873](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210531222532873.png)
+
+          1. 可靠抵达-confirmCallback
+
+             ```properties
+             spring.rabbitmq.publisher-confirms=true
+             #2.2.0之后correlated、simple、none
+             spring.rabbitmq.publisher-confirm-type=correlated
+             ```
+
+             - 在创建connectionFactory的时候设置PublisherConfirms(true)选项，开启confirmCallback
+
+             - CorrelationData：用来表示当前消息唯一性
+
+             - 消息只要被broker接收到就会执行confirmCallback，如果是cluster（集群）模式，需要所有broker接收到才会调用confirmCallback
+
+             - 被broker接收到只能表示message已经到达服务器，并不能保证能消息一定会被投递到目标queue里。所以需要用到接下来的returnCallback
+
+               ```java
+               @Configuration
+               public class MyRabbitConfig {
+               
+                   @Autowired
+                   RabbitTemplate rabbitTemplate;
+               
+               
+                   @Bean
+                   public MessageConverter messageConverter(){
+                       return new Jackson2JsonMessageConverter();
+                   }
+               
+               
+                   /**
+                    * @Description: 定制RabbitTemplate
+                    * MyRabbitConfig对象创建完成以后，执行这个方法
+                    * 1.服务器收到消息就回调
+                    *      1.spring.rabbitmq.publisher-confirms=true
+                    *      2.设置确认回调ConfirmCallback
+                    * 2.消息正确抵达队列回调
+                    * @Param: []
+                    * @return: void
+                    * @Author: Liuyunda
+                    * @Date: 2021/5/31
+                    */
+                   @PostConstruct
+                   public void initRabbitTemplate(){
+                       // 设置确认回调
+                       rabbitTemplate.setConfirmCallback(new RabbitTemplate.ConfirmCallback() {
+                           /**
+                            * @Description:只要消息抵达broker，ack就返回true
+                            * @Param: [correlationData 当前消息的唯一关联数据（消息的唯一id）, ack 代表消息是否成功收到, cause 原因]
+                            * @return: void
+                            * @Author: Liuyunda
+                            * @Date: 2021/5/31
+                            */
+                           @Override
+                           public void confirm(CorrelationData correlationData, boolean ack, String cause) {
+                               System.out.println("correlationData:"+correlationData);
+                               System.out.println("ack:"+ack);
+                               System.out.println("cause:"+cause);
+                           }
+                       });
+                   }
+               
+               }
+               ```
+
+          2. 可靠性抵达-ReturnCallback
+
+             ```properties
+             spring.rabbitmq.publisher-returns=true
+             #只要抵达队列，以异步的方式优先回调我们这个returnConfirm
+             spring.rabbitmq.template.mandatory=true
+             ```
+
+             - confirm 模式只能保证消息到达broker，不能保证消息准确投递到目标queue里。在有些业务场景下，我们需要保证消息一定要投递到目标queue里，此时就需要用到returnCallback退回模式
+
+             - 这样如果未能投递到目标queue里将调用returnCallback，可以记录下详细到投递数据，定期的巡检或者自动纠错都需要这些数据
+
+               ```java
+               @Configuration
+               public class MyRabbitConfig {
+               
+                   @Autowired
+                   RabbitTemplate rabbitTemplate;
+               
+               
+                   @Bean
+                   public MessageConverter messageConverter(){
+                       return new Jackson2JsonMessageConverter();
+                   }
+               
+               
+                   /**
+                    * @Description: 定制RabbitTemplate
+                    * MyRabbitConfig对象创建完成以后，执行这个方法
+                    * 1.服务器收到消息就回调
+                    *      1.spring.rabbitmq.publisher-confirms=true
+                    *      2.设置确认回调ConfirmCallback
+                    * 2.消息正确抵达队列回调
+                    *      1.spring.rabbitmq.publisher-returns=true
+                    *      2.spring.rabbitmq.template.mandatory=true(只要抵达队列，以异步的方式优先回调我们这个returnConfirm)
+                    * @Param: []
+                    * @return: void
+                    * @Author: Liuyunda
+                    * @Date: 2021/5/31
+                    */
+                   @PostConstruct
+                   public void initRabbitTemplate(){
+                       // 设置确认回调
+                       rabbitTemplate.setConfirmCallback(new RabbitTemplate.ConfirmCallback() {
+                           /**
+                            * @Description:只要消息抵达broker，ack就返回true
+                            * @Param: [correlationData 当前消息的唯一关联数据（消息的唯一id）, ack 代表消息是否成功收到, cause 原因]
+                            * @return: void
+                            * @Author: Liuyunda
+                            * @Date: 2021/5/31
+                            */
+                           @Override
+                           public void confirm(CorrelationData correlationData, boolean ack, String cause) {
+                               System.out.println("correlationData:"+correlationData);
+                               System.out.println("ack:"+ack);
+                               System.out.println("cause:"+cause);
+                           }
+                       });
+                       // 设置消息抵达队列的确认回调
+                       rabbitTemplate.setReturnCallback(new RabbitTemplate.ReturnCallback() {
+                           /**
+                            * @Description: 只要休息奥没有投递给指定的队列，就触发这个失败回调
+                            * @Param: [message 投递失败的消息详细信息, replyCode 回复的状态码, replyText 回复的文本内容, exchange 当时这个消息发给哪个交换机, routingKey 当时这个消息用哪个路由键]
+                            * @return: void
+                            * @Author: Liuyunda
+                            * @Date: 2021/5/31
+                            */
+                           @Override
+                           public void returnedMessage(Message message, int replyCode, String replyText, String exchange, String routingKey) {
+                               System.out.println("message:"+message);
+                               System.out.println("replyCode:"+replyCode);
+                               System.out.println("replyText:"+replyText);
+                               System.out.println("exchange:"+exchange);
+                               System.out.println("routingKey:"+routingKey);
+                           }
+                       });
+                   }
+               
+               }
+               ```
+
+               
