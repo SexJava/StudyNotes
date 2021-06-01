@@ -3556,4 +3556,59 @@ session共享问题解决
                }
                ```
 
-               
+          3. 可靠抵达-Ack消息确认机制
+          
+             1. 消费者获得到消息，成功处理，可以恢复Ack给Broker
+          
+                1. basic.ack 用于肯定确认；broker将移除此消息
+                2. basic.nack 用于否定确认；可以指定broker是否丢弃此消息，可以批量
+                3. basic.reject 用于否定确认；同上，但不能批量
+          
+             2. 默认，消息被消费者收到，就会从broker的queue中移除
+          
+             3. queue无消费者，消息依然会被存储。但是如果无法确定此消息是否被处理完成，或者成功处理。我们可以开启手动ack模式
+          
+                1. 消息处理成功，ack()，接收下一个消息，此消息broker就会移除
+          
+                2. 消息处理失败，nack()/reject()，重新发送给其他人进行处理，或者容错处理后ack
+          
+                3. 消息一直没有调用ack/nack方法，broker认为此消息正在被处理，不会投递给别人，此时客户端断开，消息不会被broker移除，会投递给别人
+          
+                   ```properties
+                   # 手动ack消息
+                   spring.rabbitmq.listener.simple.acknowledge-mode=manual
+                   ```
+          
+                   ```java
+                   @RabbitHandler
+                   public void receiveMessage(Message message, OrderReturnReasonEntity context, Channel channel){
+                       // System.out.println("接收到消息，内容："+message+",类型："+message.getClass());
+                       System.out.println("接收到消息，内容："+context);
+                       // try { TimeUnit.SECONDS.sleep(3); }catch (InterruptedException e) { e.printStackTrace(); }
+                       // System.out.println("消息处理完成");
+                       // channel内按顺序自增的
+                       long deliveryTag = message.getMessageProperties().getDeliveryTag();
+                       // 签收货物,非批量模式
+                       try {
+                           if (deliveryTag%2==0){
+                               channel.basicAck(deliveryTag,false);
+                               System.out.println("签收了");
+                           }else {
+                               // requeue = false 丢弃，=true发回服务器，服务器重新入队
+                               channel.basicNack(deliveryTag,false,false);
+                               // channel.basicReject();
+                               System.out.println("拒签了");
+                           }
+                       } catch (IOException e) {
+                           e.printStackTrace();
+                       }
+                   }
+                   ```
+          
+                   **问题**：收到很多消息，自动回复给服务器ack，只有一个消息处理成功，系统宕机了。发生消息丢失
+                   **解决**：消费者手动确认，只要没有明确告诉MQ，消息被接受，没有Ack。消息就一直是UnAcked状态，及时Consumer宕机，消息也不会丢失，会重新变为Ready，下一次有心的Consumer连接进来就发给他
+                   **问题**：如何签收
+                   **解决**：
+          
+                   ​	签收：channel.basicAck(deliveryTag,false);
+                   ​    拒签：channel.basicNack(deliveryTag,false,false);
