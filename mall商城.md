@@ -3612,3 +3612,74 @@ session共享问题解决
           
                    ​	签收：channel.basicAck(deliveryTag,false);
                    ​    拒签：channel.basicNack(deliveryTag,false,false);
+
+### 5.13 订单服务
+
+- Feign远程调用丢失请求头问题  
+
+  ![image-20210602222222879](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210602222222879.png)
+
+  加上Feign远程调用的请求拦截器 
+
+  ![image-20210602223822540](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210602223822540.png)
+
+  ```java
+  @Configuration
+  public class MallFeignConfig {
+      @Bean("requestInterceptor")
+      public RequestInterceptor requestInterceptor(){
+          return new RequestInterceptor() {
+              @Override
+              public void apply(RequestTemplate requestTemplate) {
+                  // 1.RequestContextHolder拿到刚进来的这个请求的数据
+                  ServletRequestAttributes requestAttributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+                  // 老请求
+                  HttpServletRequest request = requestAttributes.getRequest();
+                  // 2.同步请求头数据，Cookie
+                  String cookie = request.getHeader("Cookie");
+                  // 给新请求同步了老请求的cookie
+                  requestTemplate.header("Cookie",cookie);
+              }
+          };
+      }
+  }
+  ```
+
+- Feign异步情况丢失上下文问题
+
+  异步编排用的线程不是同一个，不能获得ThreadLocal里面的信息，所以在异步编排的时候将老请求的内容同步过去
+
+  ![image-20210603214842952](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210603214842952.png)
+
+  ```java
+  @Override
+  public OrderConfirmVo confirmOrder() throws ExecutionException, InterruptedException {
+      OrderConfirmVo confirmVo = new OrderConfirmVo();
+      MemberResponseVo memberResponseVo = LoginUserInterceptor.loginUser.get();
+  
+      RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
+      CompletableFuture<Void> getAddress = CompletableFuture.runAsync(() -> {
+          //1.远程查询所有的收货地址列表
+          RequestContextHolder.setRequestAttributes(requestAttributes);
+          List<MemberAddressVo> receiveAddress = memberFeignService.getReceiveAddress(memberResponseVo.getId());
+          confirmVo.setAddressVos(receiveAddress);
+      }, executor);
+  
+      CompletableFuture<Void> getCart = CompletableFuture.runAsync(() -> {
+          //2.远程查询购物车所有选中的购物项
+          RequestContextHolder.setRequestAttributes(requestAttributes);
+          List<OrderItemVo> cartItems = cartFeignService.getCurrentCartItems();
+          confirmVo.setItems(cartItems);
+      }, executor);
+      //3.查询用户的积分
+      Integer integration = memberResponseVo.getIntegration();
+      confirmVo.setIntegration(integration);
+  
+      CompletableFuture.allOf(getAddress,getCart).get();
+      // todo 防重令牌
+      return confirmVo;
+  }
+  ```
+
+  
+
