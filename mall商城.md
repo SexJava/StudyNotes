@@ -3998,3 +3998,29 @@ seata控制分布式事务
 
    5. 给分布式大事务的入口标注@GlobalTransactional，每一个小事务标注@Transactional
 
+### 5.16. RabbitMQ延时队列（实现定时任务）
+
+场景：比如未付款的 订单，超过一定时间后，系统自动取消订单并释放占有物品
+
+常用的解决方案：Spring的schedule定时任务轮询数据库
+
+- 缺点：小猴系统内存，增加数据库的压力、存在较大的时间误差
+
+解决：RabbitMQ的消息TTL和死信Exchange结合
+
+1. 消息的TTL（Time To Live）
+   - 消息的TTL就是消息的存活时间
+   - RabbitMQ可以对队列和消息分别设置TTL
+     - 对队列设置就是队列没有消费者连着的保留时间，也可以对每一个单独的消息做单独的设置。超过了这个时间，我们认为这个消息就死了，称之为死信
+     - 如果队列设置了，消息也设置了，那么会取小的。所以一个消息如果被路由到不通的队列中，这个消息死亡的时间有可能不一样（不同的队列设置）。这里单讲单个的TTL，因为它才是实现延迟任务的关键。可以通过设置消息的expiration字段或者x-message-ttl属性来设置时间，两者的效果是一样的。
+2. Dead Letter Exchange （DLX）
+   1. 一个消息在满足如下条件，会进入死信路由，记住这里是个路由而不是队列，一个路由可以对应很多队列（什么是死信）
+      1. 一个消息被Consumer拒收了，并且reject方法的参数里requeue是false。也就是说不会被再次放在队列里被其他消费者使用。（basic.reject/basic.nack) requeue = false
+      2. 上面的消息的TTL到了，消息过期了
+      3. 队列的长度限制满了。排在前面的消息会被丢弃或扔到死信路由上
+   2. Dead Letter Exchange 其实就是一种普通的exchange，和创建其他的exchange没有两样。只是在某一个设置Dead Letter Exchange 的队列中有消息过去了，会自动触发消息的转发，发送到Dead Letter Exchange中去。
+   3. 我们既可以控制消息在一段时间后变成死信，有可以控制变成死信的消息被路由到某一个指定的交换机，结合二者，其实就可以实现一个延时队列
+
+![image-20210613221654243](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210613221654243.png)
+
+![image-20210613221939477](https://gitee.com/SexJava/FigureBed/raw/master/static/image-20210613221939477.png)
